@@ -1,0 +1,18 @@
+# DJ Harmonic Analyzer - Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core audio analysis library
+# This is what actually analyzes the audio files!
+librosa>=0.10.0
+
+# GUI Library for graphical interface - Professional Qt5 framework
+# Makes the application user-friendly with windows, tabs, and buttons
+PyQt5>=5.15.0
+
+# Librosa dependencies (usually installed automatically)
+# numpy>=1.21.0
+# scipy>=1.7.0
+# scikit-learn>=1.0.0
+# audioread>=3.0.0
+# packaging>=21.0
+
