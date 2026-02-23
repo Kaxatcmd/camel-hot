@@ -1,0 +1,84 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   DJ HARMONIC ANALYZER - QUICK REFERENCE                 ║
+║                                                                            ║
+║  A professional Python app for analyzing music keys and BPM on any OS.   ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+📖 DOCUMENTATION:
+  README.md ........................... Start here! Complete guide for all platforms
+  CHANGELOG.md ........................ Version history and what's new
+  HARMONIC_FEATURES_GUIDE.md ......... Advanced mixing features
+  CROSS_PLATFORM.md .................. Platform compatibility details
+  DOCUMENTATION_CONSOLIDATION.md .... How docs were reorganized
+  _archived_docs/ .................... Historical documentation (optional)
+
+🚀 GETTING STARTED:
+  Windows Users:
+    python -m venv venv
+    venv\Scripts\activate
+    pip install -r requirements.txt
+    python main.py
+
+  macOS/Linux Users:
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    python main.py
+
+  Or use the script (macOS/Linux):
+    ./run.sh
+
+📦 DEPENDENCIES:
+  requirements.txt ................... Install with: pip install -r requirements.txt
+    - librosa (audio analysis)
+    - PyQt5 (graphical interface)
+
+💻 PROJECT STRUCTURE:
+  main.py ............................ Entry point (GUI launcher)
+  gui/main_window.py ................. GUI implementation
+  audio_analysis/key_detection.py ... Audio analysis functions
+  file_manager/organizaer.py ........ File operations
+  utils/camelot_map.py .............. Music key mapping
+  input_audio/ ...................... Put your songs here
+  output_audio/ ..................... Organized songs go here
+
+✅ VERIFY INSTALLATION:
+  python test_gui.py ................. Test the application
+  python test_setup.py ............... Test audio analysis
+
+🎯 5 MAIN FEATURES:
+  1. Analyze ........................ Detect key, BPM, duration of a song
+  2. Organize ....................... Sort entire library by musical key
+  3. Playlist ....................... Create harmonic mixing playlists
+  4. Compatibility .................. Check which keys mix well together
+  5. About .......................... Info, formats, quick guide
+
+🎧 WHAT IT DOES:
+  - Analyzes music files to detect musical keys
+  - Converts to Camelot notation (DJ standard: 8A, 8B, 2A, etc.)
+  - Organizes your library into folders by key
+  - Creates harmonic playlists for DJs
+  - Shows which keys are compatible for mixing
+
+📚 KEY CONCEPTS:
+  Camelot System = A clock of musical keys (1-12, A/B for minor/major)
+  Harmonic Mixing = Mixing songs that sound good together
+
+💡 TIPS:
+  - Start with a small folder to test
+  - Analysis is CPU-intensive (normal for 1000+ files)
+  - Works with MP3, WAV, FLAC, OGG, M4A, AIFF
+
+🌍 CROSS-PLATFORM:
+  ✅ Windows 10+
+  ✅ macOS 10.14+
+  ✅ Linux (any distribution)
+
+💬 SUPPORT:
+  1. Check README.md Troubleshooting section
+  2. Verify dependencies: pip install -r requirements.txt
+  3. Run tests: python test_gui.py
+
+═══════════════════════════════════════════════════════════════════════════════
+Created: February 2026 | Version: 2.0 | Status: Production Ready ✅
+═══════════════════════════════════════════════════════════════════════════════
