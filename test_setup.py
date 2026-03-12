@@ -59,7 +59,7 @@ def test_file_manager():
     """Test the file manager functions."""
     print("🧪 Testing File Manager Module...")
     
-    from file_manager.organizaer import find_audio_files
+    from gui.file_manager.organizer import find_audio_files
     
     # This should work without error
     files = find_audio_files(".")
