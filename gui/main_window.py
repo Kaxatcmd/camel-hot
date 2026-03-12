@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QPushButton, QLabel, QLineEdit, QFileDialog, QTextEdit,
     QComboBox, QSpinBox, QCheckBox, QMessageBox, QProgressDialog, QFrame,
-    QRadioButton, QButtonGroup, QScrollArea
+    QRadioButton, QButtonGroup, QScrollArea, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon, QColor, QLinearGradient, QPalette, QPixmap
@@ -61,12 +61,12 @@ class DJAnalyzerGUI(QMainWindow):
         self.selected_file = None
         self.selected_input_folder = None
         self.selected_output_folder = None
-        self.analysis_results = {}
+        self.analysis_results = []  # Store multiple analysis results
         self.apply_theme()
         self.init_ui()
     
     def apply_theme(self):
-        """Aplica tema desert sunset com cores do logo CAMEL-HOT"""
+        """Aplica tema desert sunset com cores do logo CAMEL-HOT - REFINED"""
         # Desert sunset gradient colors from logo
         # Green (left) -> Yellow -> Orange -> Red/Brown (right)
         stylesheet = """
@@ -87,36 +87,45 @@ class DJAnalyzerGUI(QMainWindow):
             color: #191414;
         }
         
+        #central_widget {
+            background: rgba(26, 77, 46, 0.1);
+        }
+        
         QTabWidget {
-            background: white;
+            background: #dcdcdc;
             border-radius: 12px;
         }
         
         QTabWidget::pane {
-            border: 2px solid #e8d841;
-            background: white;
+            border: 3px solid #e8d841;
+            background: #dcdcdc;
             border-radius: 12px;
             margin-top: -2px;
         }
         
         QTabBar::tab {
-            background: linear-gradient(180deg, #f5f5f5 0%, #efefef 100%);
-            color: #333;
-            padding: 12px 24px;
+            background: linear-gradient(180deg, #f8f9fa 0%, #f1f3f4 100%);
+            color: #404654;
+            padding: 12px 28px;
             margin: 2px 2px 0px 2px;
-            border-radius: 10px 10px 0px 0px;
+            border-radius: 12px 12px 0px 0px;
             font-weight: 600;
-            font-size: 11px;
-            border: 1px solid #ddd;
+            font-size: 13px;
+            border: 1px solid rgba(232,216,65,0.3);
             border-bottom: none;
+            letter-spacing: 0.4px;
+            font-family: 'Inter', 'Roboto', 'Open Sans', sans-serif;
+            min-width: 80px;
+            text-align: center;
         }
         
         QTabBar::tab:selected {
             background: white;
             color: #1DB954;
             border: 1px solid #e8d841;
-            border-bottom: 3px solid #e8d841;
+            border-bottom: 4px solid #e8d841;
             font-weight: 700;
+            font-size: 12px;
         }
         
         QTabBar::tab:hover {
@@ -129,27 +138,35 @@ class DJAnalyzerGUI(QMainWindow):
             background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1, stop:0 #1DB954, stop:1 #16a844);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 10px 18px;
+            border-radius: 12px;
+            padding: 14px 24px;
             font-weight: 600;
-            font-size: 11px;
+            font-size: 13px;
+            font-family: 'Inter', 'Roboto', 'Open Sans', sans-serif;
+            letter-spacing: 0.4px;
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
         }
         
         QPushButton:hover {
             background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1, stop:0 #1ed760, stop:1 #1aa34a);
+            border: 1px solid rgba(30, 215, 96, 0.4);
+            box-shadow: 0 6px 16px rgba(29, 185, 84, 0.4);
         }
         
         QPushButton:pressed {
             background: #1aa34a;
+            padding: 13px 21px;
         }
         
         QLineEdit {
             background: white;
             color: #191414;
-            border: 2px solid #e8d841;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 11px;
+            border: 1px solid rgba(232,216,65,0.4);
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 13px;
+            font-family: 'Inter', 'Roboto', 'Open Sans', sans-serif;
+            font-weight: 500;
         }
         
         QLineEdit:focus {
@@ -160,20 +177,23 @@ class DJAnalyzerGUI(QMainWindow):
         QTextEdit {
             background: white;
             color: #191414;
-            border: 2px solid #e8d841;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 10px;
-            font-family: 'Courier New';
+            border: 1px solid rgba(232,216,65,0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 12px;
+            font-family: 'Inter', 'Roboto', monospace;
+            line-height: 1.6;
+            font-weight: 400;
         }
         
         QComboBox {
             background: white;
             color: #191414;
             border: 2px solid #e8d841;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 10px;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 11px;
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
         }
         
         QComboBox:hover {
@@ -184,15 +204,17 @@ class DJAnalyzerGUI(QMainWindow):
             background: white;
             color: #191414;
             border: 2px solid #e8d841;
-            border-radius: 6px;
-            padding: 6px 10px;
-            font-size: 10px;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
         }
         
         QCheckBox {
             color: #191414;
             font-weight: 600;
             spacing: 8px;
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
         }
         
         QCheckBox::indicator {
@@ -213,6 +235,8 @@ class DJAnalyzerGUI(QMainWindow):
         
         QFrame {
             background: transparent;
+            border: 1px solid rgba(232,216,65,0.2);
+            border-radius: 8px;
         }
         
         QRadioButton {
@@ -437,10 +461,15 @@ class DJAnalyzerGUI(QMainWindow):
     def init_ui(self):
         """Inicializa a interface do usuário"""
         self.setWindowTitle(self.translator.get('window_title'))
-        self.setGeometry(100, 100, 1000, 800)
+        self.setGeometry(100, 100, 900, 650)
+        
+        # Allow window to be resizable
+        self.setMinimumSize(900, 500)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         
         # Widget central
         central_widget = QWidget()
+        central_widget.setObjectName("central_widget")
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(15, 15, 15, 15)
@@ -480,7 +509,7 @@ class DJAnalyzerGUI(QMainWindow):
         if not logo_found:
             # Placeholder if no logo found
             placeholder = QLabel("🐪")
-            placeholder_font = QFont("Arial", 48)
+            placeholder_font = QFont("Inter", 48)
             placeholder.setFont(placeholder_font)
             placeholder.setAlignment(Qt.AlignCenter)
             logo_layout.addWidget(placeholder)
@@ -503,7 +532,7 @@ class DJAnalyzerGUI(QMainWindow):
         
         # Main title with gradient effect
         title = QLabel("CAMEL-HOT")
-        title_font = QFont("Arial", 42, QFont.Bold)
+        title_font = QFont("Inter", 42, QFont.Bold)
         title_font.setLetterSpacing(QFont.PercentageSpacing, 110)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -523,7 +552,7 @@ class DJAnalyzerGUI(QMainWindow):
         
         # Subtitle with style
         subtitle = QLabel(self.translator.get('subtitle'))
-        subtitle_font = QFont("Arial", 11, QFont.Bold)
+        subtitle_font = QFont("Inter", 11, QFont.Bold)
         subtitle.setFont(subtitle_font)
         subtitle.setAlignment(Qt.AlignLeft)
         subtitle.setStyleSheet("""
@@ -538,7 +567,7 @@ class DJAnalyzerGUI(QMainWindow):
         
         # Tagline
         tagline = QLabel(self.translator.get('tagline'))
-        tagline_font = QFont("Arial", 9)
+        tagline_font = QFont("Inter", 9)
         tagline_font.setItalic(True)
         tagline.setFont(tagline_font)
         tagline.setAlignment(Qt.AlignLeft)
@@ -610,6 +639,7 @@ class DJAnalyzerGUI(QMainWindow):
         tabs.addTab(self.create_playlist_tab(), self.translator.get('tab_playlist'))
         tabs.addTab(self.create_compatibility_tab(), self.translator.get('tab_compatibility'))
         tabs.addTab(self.create_tips_tab(), self.translator.get('tab_tips'))
+        tabs.addTab(self.create_camelot_wheel_tab(), "Camelot Wheel")
         tabs.addTab(self.create_about_tab(), self.translator.get('tab_about'))
         tabs.setStyleSheet("""
             QTabWidget::pane {
@@ -621,20 +651,45 @@ class DJAnalyzerGUI(QMainWindow):
             }
         """)
         
-        main_layout.addWidget(tabs)
+        main_layout.addWidget(tabs, 1)
+        
+        # Footer container with background styling
+        footer_container = QWidget()
+        footer_container.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(
+                    spread:pad, x1:0 y1:0, x2:1 y2:0,
+                    stop:0 #1a4d2e,
+                    stop:0.25 #3d6e40,
+                    stop:0.4 #f4d03f,
+                    stop:0.65 #ff9500,
+                    stop:0.85 #f07c1e,
+                    stop:1 #c1440e
+                );
+                border-top: 2px solid #e8d841;
+            }
+        """)
         
         # Rodapé com botão sair (desert sunset styled)
         footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(15, 10, 15, 10)
+        footer_layout.setSpacing(10)
         
         # Texto do rodapé em branco para bom contraste
         footer_text = QLabel(self.translator.get('footer_text'))
-        footer_text.setStyleSheet("color: #ffffff; font-weight: 500; font-size: 10px;")
+        footer_text.setStyleSheet("color: #ffffff; font-weight: 500; font-size: 11px; letter-spacing: 0.3px; background: transparent;")
         footer_layout.addWidget(footer_text)
+        
+        # Developer signature on the right
+        developer_sig = QLabel("Design by H.Gwedez")
+        developer_sig.setStyleSheet("color: #e8d841; font-weight: 500; font-size: 10px; font-style: italic; background: transparent;")
         footer_layout.addStretch()
+        footer_layout.addWidget(developer_sig)
+        footer_layout.addSpacing(20)
         
         exit_btn = QPushButton(self.translator.get('btn_exit'))
-        exit_btn.setMinimumHeight(40)
-        exit_btn.setMinimumWidth(100)
+        exit_btn.setMaximumWidth(110)
+        exit_btn.setMaximumHeight(36)
         exit_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(
@@ -644,10 +699,11 @@ class DJAnalyzerGUI(QMainWindow):
                 );
                 color: white;
                 border: 2px solid #f07c1e;
-                border-radius: 8px;
-                padding: 10px;
+                border-radius: 10px;
+                padding: 8px 20px;
                 font-weight: 700;
                 font-size: 11px;
+                font-family: 'Segoe UI', 'Roboto', 'Inter', sans-serif;
             }
             QPushButton:hover {
                 background: qlineargradient(
@@ -668,7 +724,8 @@ class DJAnalyzerGUI(QMainWindow):
         exit_btn.clicked.connect(self.close)
         footer_layout.addWidget(exit_btn)
         
-        main_layout.addLayout(footer_layout)
+        footer_container.setLayout(footer_layout)
+        main_layout.addWidget(footer_container, 0)
         
         central_widget.setLayout(main_layout)
     
@@ -686,70 +743,148 @@ class DJAnalyzerGUI(QMainWindow):
             self.init_ui()
     
     def create_analyze_tab(self):
-        """Cria aba para analisar música individual"""
+        """Cria aba para analisar música individual - IMPROVED LAYOUT"""
         widget = QWidget()
         layout = QVBoxLayout()
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        layout.setContentsMargins(28, 28, 28, 28)
         
-        # Título
+        # Título com estilo melhorado
         title = QLabel(self.translator.get('analyze_title'))
-        title_font = QFont("Segoe UI", 14, QFont.Bold)
+        title_font = QFont("Inter", 16, QFont.Bold)
         title.setFont(title_font)
-        title.setStyleSheet("color: #1DB954;")
+        title.setStyleSheet("color: #1DB954; letter-spacing: 0.5px;")
         layout.addWidget(title)
         
-        # Seleção de arquivo
-        file_layout = QHBoxLayout()
+        # Linha decorativa
+        sep_line = QFrame()
+        sep_line.setFrameShape(QFrame.HLine)
+        sep_line.setStyleSheet("background: #e8d841; height: 2px; border: none; margin: 8px 0px;")
+        layout.addWidget(sep_line)
+        
+        # INPUT SECTION - Com melhor visual
+        input_frame = QFrame()
+        input_frame.setStyleSheet("""
+            QFrame {
+                background: rgba(255,255,255,0.95);
+                border: 1px solid rgba(232,216,65,0.3);
+                border-radius: 12px;
+                padding: 18px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            }
+        """)
+        input_layout = QVBoxLayout()
+        input_layout.setSpacing(14)
+        
         file_label = QLabel(self.translator.get('label_select_file'))
-        file_label.setStyleSheet("font-weight: 600; color: #191414;")
-        file_layout.addWidget(file_label)
+        file_label.setStyleSheet("font-weight: 700; color: #191414; font-size: 12px; letter-spacing: 0.3px;")
+        input_layout.addWidget(file_label)
+        
+        file_row = QHBoxLayout()
         self.analyze_file_input = QLineEdit()
         self.analyze_file_input.setReadOnly(True)
         self.analyze_file_input.setPlaceholderText(self.translator.get('placeholder_audio_file'))
-        file_layout.addWidget(self.analyze_file_input)
+        self.analyze_file_input.setMinimumHeight(38)
+        file_row.addWidget(self.analyze_file_input)
         
         browse_btn = QPushButton(self.translator.get('btn_browse'))
-        browse_btn.setMaximumWidth(100)
+        browse_btn.setMaximumWidth(110)
+        browse_btn.setMinimumHeight(38)
         browse_btn.clicked.connect(self.browse_analyze_file)
-        file_layout.addWidget(browse_btn)
-        layout.addLayout(file_layout)
+        file_row.addWidget(browse_btn)
+        input_layout.addLayout(file_row)
         
-        # Botões de ação
+        input_frame.setLayout(input_layout)
+        layout.addWidget(input_frame)
+        
+        # ACTION BUTTONS - Improved styling
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+        
         analyze_btn = QPushButton(self.translator.get('btn_analyze_track'))
-        analyze_btn.setMinimumHeight(40)
-        analyze_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        analyze_btn.setMinimumHeight(48)
+        analyze_btn.setMinimumWidth(200)
+        analyze_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         analyze_btn.setStyleSheet("""
             QPushButton {
-                background: #3B82F6;
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 #3B82F6,
+                    stop:1 #1D4ED8
+                );
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 10px;
+                border-radius: 10px;
+                padding: 12px;
                 font-weight: 600;
+                letter-spacing: 0.4px;
             }
             QPushButton:hover {
-                background: #2563EB;
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 #60A5FA,
+                    stop:1 #2563EB
+                );
             }
         """)
         analyze_btn.clicked.connect(self.handle_analyze)
         btn_layout.addWidget(analyze_btn)
         
         clear_btn = QPushButton(self.translator.get('btn_clear'))
-        clear_btn.setMaximumWidth(100)
+        clear_btn.setMaximumWidth(120)
+        clear_btn.setMinimumHeight(48)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background: #EF4444;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 12px;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+            }
+            QPushButton:hover {
+                background: #DC2626;
+            }
+        """)
         clear_btn.clicked.connect(lambda: self.clear_analyze_tab())
         btn_layout.addWidget(clear_btn)
+        btn_layout.addStretch()
         layout.addLayout(btn_layout)
         
-        # Output
-        layout.addWidget(QLabel(self.translator.get('label_results')))
+        # RESULTS SECTION - Expanded area with frame
+        results_frame = QFrame()
+        results_frame.setStyleSheet("""
+            QFrame {
+                background: rgba(255,255,255,0.95);
+                border: 1px solid rgba(232,216,65,0.3);
+                border-radius: 12px;
+                padding: 20px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+        """)
+        results_layout = QVBoxLayout()
+        results_layout.setContentsMargins(0,0,0,0)
+        results_layout.setSpacing(8)
+        results_label = QLabel(self.translator.get('label_results'))
+        results_label.setStyleSheet("font-weight: 700; color: #191414; font-size: 14px; letter-spacing: 0.5px;")
+        results_layout.addWidget(results_label)
+        results_frame.setLayout(results_layout)
+        layout.addWidget(results_frame)
+        
         self.analyze_output = QTextEdit()
         self.analyze_output.setReadOnly(True)
-        self.analyze_output.setMinimumHeight(250)
-        self.analyze_output.setStyleSheet("background: white; border: 1px solid #D1D5DB; border-radius: 6px;")
-        layout.addWidget(self.analyze_output)
-        layout.addStretch()
+        self.analyze_output.setMinimumHeight(100)
+        self.analyze_output.setStyleSheet("""
+            QTextEdit {
+                background: white;
+                border: 1px solid rgba(232,216,65,0.3);
+                border-radius: 12px;
+                padding: 16px;
+                font-size: 11px;
+                font-family: 'Courier New', monospace;
+            }
+        """)
+        self.analyze_output.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(self.analyze_output, 1)
         
         widget.setLayout(layout)
         return widget
@@ -1013,8 +1148,8 @@ class DJAnalyzerGUI(QMainWindow):
         layout.addWidget(title)
         
         # SECTION 1: Transition Comparison
-        layout.addWidget(QLabel("━" * 70))
-        layout.addWidget(QLabel("🎛️ TRANSITION COMPARISON"))
+        layout.addWidget(QLabel("-" * 70))
+        layout.addWidget(QLabel("Transition Comparison"))
         
         # Track 1 selection
         file1_layout = QHBoxLayout()
@@ -1072,8 +1207,8 @@ class DJAnalyzerGUI(QMainWindow):
         layout.addWidget(QLabel(""))
         
         # SECTION 2: Key Compatibility
-        layout.addWidget(QLabel("━" * 70))
-        layout.addWidget(QLabel("🎼 CAMELOT KEY COMPATIBILITY"))
+        layout.addWidget(QLabel("-" * 70))
+        layout.addWidget(QLabel("Camelot Key Compatibility"))
         
         # Seleção
         key_layout = QHBoxLayout()
@@ -1248,12 +1383,12 @@ class DJAnalyzerGUI(QMainWindow):
         tip_index = self.tips_manager.last_tip_index + 1
         self.tip_counter.setText(f"Tip {tip_index} of {total_tips}")
     
-    def create_about_tab(self):
-        """Cria aba Sobre com visualização da Roda Camelot"""
+    def create_camelot_wheel_tab(self):
+        """Cria aba dedicada à Roda Camelot - Nova Tab"""
         widget = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(12)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(24, 24, 24, 24)
         
         # Scroll area for content
         scroll = QScrollArea()
@@ -1262,132 +1397,46 @@ class DJAnalyzerGUI(QMainWindow):
         
         scroll_content = QWidget()
         content_layout = QVBoxLayout()
-        content_layout.setSpacing(15)
+        content_layout.setSpacing(20)
         
-        # ===== APP INFO SECTION =====
-        app_info = QTextEdit()
-        app_info.setReadOnly(True)
-        app_info.setStyleSheet("""
-            QTextEdit {
-                background: white;
-                border: 3px solid #1DB954;
-                border-radius: 8px;
-                padding: 15px;
-                font-size: 11px;
-                max-height: 300px;
-            }
-        """)
-        
-        # Get language-specific about content
+        # Get language-specific title
         lang = self.translator.get_current_language()
         
         if lang == 'PT':
-            about_content = """
-CAMEL-HOT - Analisador de Música Harmônica v2.0
-
-═════════════════════════════════════════════════════════════
-
-O que é?
-━━━━━━━━━━━━━━━━━
-Um aplicativo que analisa sua música e a organiza por tom musical,
-facilitando a mixagem harmônica profissional como os DJs fazem.
-
-Recursos Principais:
-━━━━━━━━━━━━━━━━━━━━
-✓ Detectar tom musical, BPM e duração das músicas
-✓ Converter para notação Camelot (padrão DJ)
-✓ Organizar sua biblioteca por tom musical
-✓ Criar playlists de mistura harmônica
-✓ Verificar compatibilidade de tom para mixagem suave
-
-Formatos de Áudio Suportados:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MP3 • WAV • FLAC • OGG • M4A • AIFF
-
-Feito para DJs e amantes de música!
-            """
             wheel_title = "🎡 RODA CAMELOT - Referência de Harmonia"
             wheel_desc = "A Roda Camelot mostra as 24 tonalidades musicais (12 menores + 12 maiores) organizadas em um círculo. Tonalidades próximas na roda harmonizam naturalmente."
+            key_info = "🔑 LEITURA DA RODA:\n• NÚMEROS: 1-12 (como um relógio representam 12 tons)\n• A = Tonalidade menor (som mais escuro, triste)\n• B = Tonalidade maior (som mais brilhante, alegre)\n\nExemplo: 8A = Sol# menor  |  3B = Reb maior"
         elif lang == 'ES':
-            about_content = """
-CAMEL-HOT - Analizador de Música Armónica v2.0
-
-═════════════════════════════════════════════════════════════
-
-¿Qué es?
-━━━━━━━━━━━━━━━━━━━
-Una aplicación que analiza tu música y la organiza por tonalidad musical,
-facilitando la mezcla armónica profesional como lo hacen los DJs.
-
-Características Principales:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Detectar tonalidad, BPM y duración de canciones
-✓ Convertir a notación Camelot (estándar DJ)
-✓ Organizar tu biblioteca por tonalidad
-✓ Crear listas de mezcla armónica
-✓ Verificar compatibilidad de tonalidad para mezclas suaves
-
-Formatos de Audio Compatibles:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MP3 • WAV • FLAC • OGG • M4A • AIFF
-
-¡Hecho para DJs y amantes de la música!
-            """
             wheel_title = "🎡 RUEDA CAMELOT - Referencia de Armonía"
             wheel_desc = "La Rueda Camelot muestra las 24 tonalidades musicales (12 menores + 12 mayores) organizadas en un círculo. Las tonalidades cercanas en la rueda armonizan naturalmente."
+            key_info = "🔑 LECTURA DE LA RUEDA:\n• NÚMEROS: 1-12 (como un reloj representan 12 tonos)\n• A = Tonalidad menor (sonido más oscuro, triste)\n• B = Tonalidad mayor (sonido más brillante, alegre)\n\nEjemplo: 8A = Sol# menor  |  3B = Reb mayor"
         else:  # ENG (default)
-            about_content = """
-CAMEL-HOT - Harmonic Music Analyzer v2.0
-
-═════════════════════════════════════════════════════════════
-
-What is this?
-━━━━━━━━━━━━━
-An application that analyzes your music and organizes it by musical key,
-facilitating professional harmonic mixing like DJs do.
-
-Key Features:
-━━━━━━━━━━━━━━━
-✓ Detect musical key, BPM and duration of songs
-✓ Convert to Camelot notation (DJ standard)
-✓ Organize your library by musical key
-✓ Create harmonic mixing playlists
-✓ Check key compatibility for smooth mixing
-
-Supported Audio Formats:
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-MP3 • WAV • FLAC • OGG • M4A • AIFF
-
-Made for DJs and music lovers!
-            """
             wheel_title = "🎡 CAMELOT WHEEL - Harmony Reference"
             wheel_desc = "The Camelot Wheel shows the 24 musical keys (12 minor + 12 major) organized in a circle. Keys close together on the wheel harmonize naturally."
+            key_info = "🔑 READING THE WHEEL:\n• NUMBERS: 1-12 (like a clock represent 12 pitches)\n• A = Minor key (darker, sadder sound)\n• B = Major key (brighter, happier sound)\n\nExample: 8A = G♯ minor  |  3B = D♭ major"
         
-        app_info.setText(about_content)
-        content_layout.addWidget(app_info)
-        
-        # ===== CAMELOT WHEEL SECTION =====
-        wheel_section = QWidget()
+        # ===== WHEEL IMAGE SECTION =====
+        wheel_section = QFrame()
         wheel_section.setStyleSheet("""
-            QWidget {
+            QFrame {
                 background: qlineargradient(spread:pad, x1:0 y1:0, x2:1 y2:1,
                     stop:0 #f9fafb,
                     stop:1 #f3f4f6
                 );
                 border: 3px solid #e8d841;
                 border-radius: 12px;
-                padding: 20px;
+                padding: 24px;
             }
         """)
         wheel_layout = QVBoxLayout()
-        wheel_layout.setSpacing(10)
-        wheel_layout.setContentsMargins(15, 15, 15, 15)
+        wheel_layout.setSpacing(16)
+        wheel_layout.setContentsMargins(0, 0, 0, 0)
         
         # Wheel Title
         wheel_title_label = QLabel(wheel_title)
-        wheel_title_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        wheel_title_label.setFont(QFont("Segoe UI", 16, QFont.Bold))
         wheel_title_label.setAlignment(Qt.AlignCenter)
-        wheel_title_label.setStyleSheet("color: #1DB954;")
+        wheel_title_label.setStyleSheet("color: #1DB954; letter-spacing: 0.5px; margin-bottom: 10px;")
         wheel_layout.addWidget(wheel_title_label)
         
         # Try to load wheel image
@@ -1401,12 +1450,12 @@ Made for DJs and music lovers!
                 try:
                     if image_name.endswith(".svg"):
                         wheel_svg = QSvgWidget(str(image_path))
-                        wheel_svg.setMaximumHeight(500)
+                        wheel_svg.setMaximumHeight(550)
                         wheel_layout.addWidget(wheel_svg, alignment=Qt.AlignCenter)
                     else:
                         wheel_pixmap = QPixmap(str(image_path))
                         if not wheel_pixmap.isNull():
-                            wheel_pixmap = wheel_pixmap.scaledToHeight(500, Qt.SmoothTransformation)
+                            wheel_pixmap = wheel_pixmap.scaledToHeight(550, Qt.SmoothTransformation)
                             wheel_img_label = QLabel()
                             wheel_img_label.setPixmap(wheel_pixmap)
                             wheel_img_label.setAlignment(Qt.AlignCenter)
@@ -1420,31 +1469,109 @@ Made for DJs and music lovers!
             # Display text-based Camelot wheel representation
             wheel_text = self._get_camelot_wheel_text()
             wheel_display = QLabel(wheel_text)
-            wheel_display.setFont(QFont("Courier New", 9))
+            wheel_display.setFont(QFont("Courier New", 10))
             wheel_display.setAlignment(Qt.AlignCenter)
-            wheel_display.setStyleSheet("color: #333; background: white; padding: 15px; border-radius: 6px; max-height: 300px;")
+            wheel_display.setStyleSheet("color: #333; background: white; padding: 20px; border-radius: 8px; line-height: 1.6;")
             wheel_layout.addWidget(wheel_display)
         
         # Description
+        wheel_layout.addSpacing(12)
         desc_label = QLabel(wheel_desc)
-        desc_label.setFont(QFont("Segoe UI", 10))
+        desc_label.setFont(QFont("Segoe UI", 12))
         desc_label.setAlignment(Qt.AlignCenter)
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #555; max-width: 600px;")
+        desc_label.setStyleSheet("color: #404654; max-width: 600px; line-height: 1.6;")
         wheel_layout.addWidget(desc_label)
-        
-        # Camelot Key Info
-        wheel_layout.addSpacing(10)
-        key_info_label = QLabel(self._get_camelot_key_info())
-        key_info_label.setFont(QFont("Segoe UI", 9))
-        key_info_label.setAlignment(Qt.AlignCenter)
-        key_info_label.setWordWrap(True)
-        key_info_label.setStyleSheet("color: #666; background: white; padding: 10px; border-radius: 6px;")
-        wheel_layout.addWidget(key_info_label)
         
         wheel_section.setLayout(wheel_layout)
         content_layout.addWidget(wheel_section)
         
+        # ===== KEY INFO SECTION =====
+        info_section = QFrame()
+        info_section.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:1 y2:1,
+                    stop:0 #f3f4f6,
+                    stop:1 #f9fafb
+                );
+                border: 2px solid #1DB954;
+                border-radius: 12px;
+                padding: 20px;
+            }
+        """)
+        info_layout = QVBoxLayout()
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        
+        key_info_label = QLabel(key_info)
+        key_info_label.setFont(QFont("Segoe UI", 11))
+        key_info_label.setAlignment(Qt.AlignCenter)
+        key_info_label.setWordWrap(True)
+        key_info_label.setStyleSheet("color: #191414; line-height: 1.8;")
+        info_layout.addWidget(key_info_label)
+        
+        info_section.setLayout(info_layout)
+        content_layout.addWidget(info_section)
+        
+        # ===== MIXING TIPS SECTION =====
+        tips_section = QFrame()
+        tips_section.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:1 y2:1,
+                    stop:0 #fff9e6,
+                    stop:1 #fff3cc
+                );
+                border: 2px solid #f4d03f;
+                border-radius: 12px;
+                padding: 20px;
+            }
+        """)
+        tips_layout = QVBoxLayout()
+        tips_layout.setContentsMargins(0, 0, 0, 0)
+        
+        if lang == 'PT':
+            tips_title = "💡 Dicas de Mistura Harmônica"
+            tips_text = (
+                "✓ Mesma tonalidade: Mix perfeito (ex: 8A → 8A)\n"
+                "✓ ±1 semitom: Mudança de energia (ex: 8A → 8B ou 7A)\n"
+                "✓ ±5 semitons: Relação harmônica (ex: 8A → 3A)\n"
+                "✓ Evitar: Tons distantes no círculo (quebra harmonia)\n"
+                "✓ Dica: Use a Roda Camelot para harmonia suave!"
+            )
+        elif lang == 'ES':
+            tips_title = "💡 Consejos de Mezcla Armónica"
+            tips_text = (
+                "✓ Misma tonalidad: Mix perfecto (ej: 8A → 8A)\n"
+                "✓ ±1 semitono: Cambio de energía (ej: 8A → 8B o 7A)\n"
+                "✓ ±5 semitonos: Relación armónica (ej: 8A → 3A)\n"
+                "✓ Evitar: Tonos distantes en el círculo (rompe armonía)\n"
+                "✓ Consejo: ¡Usa la Rueda Camelot para mezcla suave!"
+            )
+        else:  # ENG
+            tips_title = "💡 Harmonic Mixing Tips"
+            tips_text = (
+                "✓ Same key: Perfect mix (e.g., 8A → 8A)\n"
+                "✓ ±1 semitone: Energy shift (e.g., 8A → 8B or 7A)\n"
+                "✓ ±5 semitones: Harmonic relation (e.g., 8A → 3A)\n"
+                "✓ Avoid: Distant keys on circle (breaks harmony)\n"
+                "✓ Pro Tip: Use Camelot Wheel for smooth mixing!"
+            )
+        
+        tips_title_label = QLabel(tips_title)
+        tips_title_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        tips_title_label.setStyleSheet("color: #191414; margin-bottom: 10px;")
+        tips_layout.addWidget(tips_title_label)
+        
+        tips_text_label = QLabel(tips_text)
+        tips_text_label.setFont(QFont("Segoe UI", 11))
+        tips_text_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        tips_text_label.setWordWrap(True)
+        tips_text_label.setStyleSheet("color: #404654; line-height: 1.8;")
+        tips_layout.addWidget(tips_text_label)
+        
+        tips_section.setLayout(tips_layout)
+        content_layout.addWidget(tips_section)
+        
+        content_layout.addStretch()
         scroll_content.setLayout(content_layout)
         scroll.setWidget(scroll_content)
         main_layout.addWidget(scroll)
@@ -1452,40 +1579,142 @@ Made for DJs and music lovers!
         widget.setLayout(main_layout)
         return widget
     
-    def _get_camelot_wheel_text(self):
-        """Get text-based Camelot wheel representation"""
-        return """
-            🎡 CAMELOT WHEEL (12A-12B)
-            
-                        12B (E major)
-                    11A ◄─────► 1A
-                  10A              2A
-                9A    ●CAMELOT       3A
-              8A         WHEEL        4A
-            7A                         5A
-               ◄─────────────────────►
-            7B              8B         6A
-              8B    ●CENTER           5B
-                9B                  4B
-                  10B             3B
-                    11B ◄─────► 2B
-                        12A (G♯ minor)
-            
-         ◄ Same key (identical harmony)
-         ►  +1 / -1 (energy shift)
-         ◄─► ±5 semitones (harmonic relation)
-        """
-    
-    def _get_camelot_key_info(self):
-        """Get Camelot key information"""
-        return (
-            "🔑 KEY: (Number)(Letter)\n"
-            "• NUMBERS: 1-12 (like a clock represents 12 pitches)\n"
-            "• A = Minor key (darker, sadder sound)\n"
-            "• B = Major key (brighter, happier sound)\n"
-            "\n"
-            "Example: 8A = G♯ minor  |  3B = D♭ major"
-        )
+    def create_about_tab(self):
+        """Cria aba Sobre - IMPROVED com clarificação offline"""
+        widget = QWidget()
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        
+        # Scroll area for content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        scroll_content = QWidget()
+        content_layout = QVBoxLayout()
+        content_layout.setSpacing(18)
+        
+        # ===== APP INFO SECTION =====
+        app_info = QTextEdit()
+        app_info.setReadOnly(True)
+        app_info.setStyleSheet("""
+            QTextEdit {
+                background: white;
+                border: 3px solid #1DB954;
+                border-radius: 12px;
+                padding: 20px;
+                font-size: 12px;
+                line-height: 1.6;
+            }
+        """)
+        
+        # Get language-specific about content
+        lang = self.translator.get_current_language()
+        
+        if lang == 'PT':
+            about_content = """
+CAMEL-HOT - Analisador de Música Harmônica v2.0
+
+----------------------------------------------
+
+O que é?
+--------
+Um aplicativo que analisa sua música e a organiza por tom musical,
+facilitando a mixagem harmônica profissional como os DJs fazem.
+
+IMPORTANTE - APLICATIVO 100% OFFLINE
+-------------------------------------
+Este aplicativo é totalmente offline e não se conecta a nenhum
+serviço externo, software de DJ ou streaming. É uma ferramenta
+local de análise e organização de sua biblioteca pessoal.
+
+Recursos Principais:
+--------------------
+✓ Detectar tom musical, BPM e duração das músicas
+✓ Converter para notação Camelot (padrão DJ)
+✓ Organizar sua biblioteca por tom musical
+✓ Criar playlists de mistura harmônica
+✓ Verificar compatibilidade de tom para mixagem suave
+
+Formatos de Áudio Suportados:
+-----------------------------
+MP3 • WAV • FLAC • OGG • M4A • AIFF
+
+Feito para DJs e amantes de música!
+            """
+        elif lang == 'ES':
+            about_content = """
+CAMEL-HOT - Analizador de Música Armónica v2.0
+
+=======================================
+
+¿Qué es?
+------------
+Una aplicación que analiza tu música y la organiza por tonalidad musical,
+facilitando la mezcla armónica profesional como lo hacen los DJs.
+
+🔒 IMPORTANTE — APLICACIÓN 100% OFFLINE
+--------------------------------------
+Esta aplicación es completamente offline y no se conecta a ningún
+servicio externo, software de DJ o streaming. Es una herramienta
+local de análisis y organización de tu biblioteca personal.
+
+Características Principales:
+------------------------
+✓ Detectar tonalidad, BPM y duración de canciones
+✓ Convertir a notación Camelot (estándar DJ)
+✓ Organizar tu biblioteca por tonalidad
+✓ Crear listas de mezcla armónica
+✓ Verificar compatibilidad de tonalidad para mezclas suaves
+
+Formatos de Audio Compatibles:
+------------------------------
+MP3 • WAV • FLAC • OGG • M4A • AIFF
+
+¡Hecho para DJs y amantes de la música!
+            """
+        else:  # ENG (default)
+            about_content = """
+CAMEL-HOT - Harmonic Music Analyzer v2.0
+
+═════════════════════════════════════════════════════════════
+
+What is this?
+------------
+An application that analyzes your music and organizes it by musical key,
+facilitating professional harmonic mixing like DJs do.
+
+🔒 IMPORTANT — 100% OFFLINE APPLICATION
+
+This application is completely offline and does not connect to any
+external services, DJ software, or streaming services. It is a local
+tool for analyzing and organizing your personal music library.
+
+Key Features:
+
+✓ Detect musical key, BPM and duration of songs
+✓ Convert to Camelot notation (DJ standard)
+✓ Organize your library by musical key
+✓ Create harmonic mixing playlists
+✓ Check key compatibility for smooth mixing
+
+Supported Audio Formats:
+
+MP3 • WAV • FLAC • OGG • M4A • AIFF
+
+Made for DJs and music lovers!
+            """
+        
+        app_info.setText(about_content)
+        content_layout.addWidget(app_info)
+        
+        scroll_content.setLayout(content_layout)
+        scroll.setWidget(scroll_content)
+        main_layout.addWidget(scroll)
+        
+        widget.setLayout(main_layout)
+        return widget
     
     def browse_analyze_file(self):
         """Abre diálogo para selecionar arquivo"""
@@ -1690,24 +1919,79 @@ Made for DJs and music lovers!
             output += "✅ Análise concluída com sucesso!\n"
             output += "═" * 70 + "\n\n"
             
-            # Get current text and append new result
-            current_text = self.analyze_output.toPlainText()
-            if current_text.strip():
-                # If there are already results, append with separator
-                self.analyze_output.setText(current_text + output)
-            else:
-                # First analysis
-                self.analyze_output.setText(output)
+            # Store result in list
+            self.analysis_results.append({
+                'output': output,
+                'result': result
+            })
             
-            # Scroll to the bottom to see latest result
-            self.analyze_output.verticalScrollBar().setValue(
-                self.analyze_output.verticalScrollBar().maximum()
-            )
-            
-            self.analysis_results = result
+            # Display all results side-by-side in pairs
+            self.display_results_side_by_side()
             
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao analisar:\n{str(e)}")
+    
+    def display_results_side_by_side(self):
+        """Display analysis results side-by-side with far-left and far-right positioning"""
+        if not self.analysis_results:
+            return
+        
+        # Split results into lines for each analysis
+        all_lines = []
+        for result_data in self.analysis_results:
+            lines = result_data['output'].strip().split('\n')
+            all_lines.append(lines)
+        
+        # Build output - push analyses to opposite ends
+        display_output = ""
+        
+        # Calculate available width based on monospace font at typical text box size
+        # Approximate usable width for side-by-side display
+        left_max_width = 85  # Left analysis max width - more generous for output content
+        right_start_column = 140  # Column where right analysis begins (pushed far right)
+        
+        # Process results in pairs
+        for i in range(0, len(all_lines), 2):
+            left_lines = all_lines[i] if i < len(all_lines) else []
+            right_lines = all_lines[i + 1] if i + 1 < len(all_lines) else []
+            
+            # Determine max lines for this row
+            max_lines = max(len(left_lines), len(right_lines))
+            
+            # Build side-by-side layout with dynamic spacing
+            for line_idx in range(max_lines):
+                left_line = left_lines[line_idx] if line_idx < len(left_lines) else ""
+                right_line = right_lines[line_idx] if line_idx < len(right_lines) else ""
+                
+                # Truncate left line if too long
+                if len(left_line) > left_max_width:
+                    left_line = left_line[:left_max_width - 3] + "..."
+                
+                # Build the line with dynamic spacing
+                if right_line:
+                    # Calculate padding needed to push right line to far right
+                    current_length = len(left_line)
+                    padding_needed = right_start_column - current_length
+                    if padding_needed < 1:
+                        padding_needed = 3
+                    
+                    # Combine with dynamic padding
+                    line_output = left_line + " " * padding_needed + right_line
+                    display_output += line_output + "\n"
+                else:
+                    # Only left content
+                    display_output += left_line + "\n"
+            
+            # Add separator between pairs
+            display_output += "\n" + "=" * 180 + "\n\n"
+        
+        # Set the display
+        self.analyze_output.setText(display_output)
+        
+        # Scroll to bottom
+        self.analyze_output.verticalScrollBar().setValue(
+            self.analyze_output.verticalScrollBar().maximum()
+        )
     
     def handle_organize(self):
         """Organiza biblioteca"""
@@ -1910,6 +2194,7 @@ Made for DJs and music lovers!
         self.analyze_file_input.clear()
         self.analyze_output.clear()
         self.selected_file = None
+        self.analysis_results = []
     
     def clear_organize_tab(self):
         """Limpa aba de organização"""
