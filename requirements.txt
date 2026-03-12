@@ -4,6 +4,7 @@
 # Core Dependencies (Required)
 librosa>=0.10.0    # Audio analysis library for detecting keys and BPM
 PyQt5>=5.15.0      # Professional GUI framework for the application
+matplotlib>=3.5.0  # For generating the Camelot wheel visualization
 
 # Note: librosa automatically installs its dependencies:
 # - numpy

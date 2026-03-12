@@ -7,7 +7,7 @@ This package handles all file-related operations:
 - Moving/copying files to appropriate locations
 """
 
-from .organizaer import (
+from .organizer import (
     find_audio_files,
     organize_by_key,
     create_playlist

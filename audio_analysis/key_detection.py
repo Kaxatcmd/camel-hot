@@ -292,10 +292,10 @@ def detect_bpm(file_path):
 
 def analyze_track(file_path):
     """
-    Complete analysis of a track - key, BPM, and more.
+    Complete analysis of a track - key, BPM, energy, groove, and mood.
     
     This gives you all the important musical information about
-    a song in one call.
+    a song in one call, including advanced features for smart transitions.
     
     Args:
         file_path: Path to the audio file
@@ -307,11 +307,17 @@ def analyze_track(file_path):
         - camelot: Camelot notation
         - bpm: Beats per minute
         - duration: How long the track is (seconds)
+        - confidence: Key detection confidence (0-1)
+        - energy: Energy level classification (if librosa available)
+        - groove: Groove type and characteristics (if librosa available)
+        - mood: Mood classification and scores (if librosa available)
     
     Example:
         >>> info = analyze_track("my_song.mp3")
         >>> print(f"This song is in {info['camelot']} at {info['bpm']} BPM")
+        >>> print(f"Mood: {info['mood']['primary_mood']}, Energy: {info['energy']['level']}")
         This song is in 8A at 120 BPM
+        Mood: Euphoric, Energy: High
     """
     if not LIBROSA_AVAILABLE:
         return {
@@ -338,19 +344,41 @@ def analyze_track(file_path):
         print(f"   ⏱️  Detectando BPM...")
         bpm = detect_bpm(file_path)
         
+        # Advanced analysis for transitions
+        print(f"   ⚡ Detectando nível de energia...")
+        from audio_analysis.energy_detection import classify_energy_level
+        energy = classify_energy_level(y, sr)
+        
+        print(f"   🥁 Analisando groove...")
+        from audio_analysis.groove_analysis import classify_groove_type
+        groove = classify_groove_type(y, sr)
+        
+        print(f"   😊 Classificando humor...")
+        from audio_analysis.mood_classification import classify_mood
+        mood = classify_mood(y, sr)
+        
         result = {
             "file_path": file_path,
             "key": key_info['key'],
             "camelot": key_info['camelot'],
             "bpm": bpm,
             "duration": round(duration, 2),
-            "confidence": key_info['confidence']
+            "confidence": key_info['confidence'],
+            "energy": energy,
+            "groove": groove,
+            "mood": mood
         }
         
         print(f"   ✅ Análise completa!")
         print(f"      • Tonalidade: {result['key']}")
         print(f"      • Camelot: {result['camelot']}")
         print(f"      • BPM: {result['bpm']}")
+        if energy:
+            print(f"      • Energia: {energy.get('level', 'Unknown')}")
+        if groove:
+            print(f"      • Groove: {groove.get('type', 'Unknown')}")
+        if mood:
+            print(f"      • Humor: {mood.get('primary_mood', 'Unknown')}")
         
         return result
     
