@@ -15,7 +15,7 @@ Usage:
 import os
 from pathlib import Path
 
-# ─── BASE PATHS ───────────────────────────────────────────────────────
+# --- BASE PATHS ---
 # Handle both normal and frozen (PyInstaller/Nuitka) environments
 if getattr(os, "frozen", False):
     # Running as compiled executable (PyInstaller/Nuitka)
@@ -46,7 +46,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 """Data directory for runtime data files."""
 
 
-# ─── AUDIO ANALYSIS PARAMETERS ─────────────────────────────────────
+# --- AUDIO ANALYSIS PARAMETERS ---
 """Duration (seconds) for key detection analysis."""
 AUDIO_LOAD_DURATION_SHORT = 30
 
@@ -87,7 +87,7 @@ DISSONANT_INTERVALS = [1, 6, 11]
 ATTACK_STEEPNESS_FALLBACK = 0.3
 
 
-# ─── PLAYLIST & FILE ORGANIZATION ─────────────────────────────────
+# --- PLAYLIST & FILE ORGANIZATION ---
 """Default maximum songs in generated playlist."""
 DEFAULT_PLAYLIST_LIMIT = 20
 
