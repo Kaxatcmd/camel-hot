@@ -19,18 +19,21 @@ Example: "8A" means C# Minor, and it can mix with:
 # This dictionary maps standard key names to their Camelot notation
 # The key is the "musical" name, the value is the Camelot code
 CAMELOT_MAP = {
-    # Major Keys (the "A" circle)
+    # Major Keys (the "B" circle — outer ring)
+    # Camelot wheel positions (circle of fifths, 8B=C at 8 o'clock):
+    # 1B=B, 2B=F#/Gb, 3B=C#/Db, 4B=Ab/G#, 5B=Eb/D#
+    # 6B=Bb/A#, 7B=F, 8B=C, 9B=G, 10B=D, 11B=A, 12B=E
     "C Major": "8B",
-    "C# Major": "3B",  # Also called Db Major
+    "C# Major": "3B",   # = Db Major
     "D Major": "10B",
-    "Eb Major": "3B",  # Also called D# Major
-    "E Major": "7B",
-    "F Major": "2B",
-    "F# Major": "9B",  # Also called Gb Major
-    "G Major": "4B",
-    "Ab Major": "9B",  # Also called G# Major
+    "Eb Major": "5B",   # = D# Major  (was incorrectly 3B)
+    "E Major": "12B",  # (was incorrectly 7B)
+    "F Major": "7B",
+    "F# Major": "2B",  # = Gb Major  (was incorrectly 9B)
+    "G Major": "9B",   # (was incorrectly 4B)
+    "Ab Major": "4B",  # = G# Major  (was incorrectly 9B)
     "A Major": "11B",
-    "Bb Major": "6B",  # Also called A# Major
+    "Bb Major": "6B",   # = A# Major
     "B Major": "1B",
     
     # Minor Keys (the "A" circle)
@@ -243,16 +246,160 @@ def get_harmonic_mixes(camelot_code):
 def get_compatible_keys(camelot_code):
     """
     Get all keys compatible with the given Camelot key.
-    
+
     Alias para get_harmonic_mixes() para manter compatibilidade.
-    
+
     Args:
         camelot_code: Camelot code like "8A"
-    
+
     Returns:
         List of compatible Camelot codes
     """
     return get_harmonic_mixes(camelot_code)
+
+
+def get_harmonic_distance(key1, key2):
+    """
+    Calculate the minimum harmonic distance (wheel steps) between two Camelot keys.
+
+    Same key = 0, adjacent = 1, relative (A↔B same number) = 0.5, etc.
+
+    Args:
+        key1, key2: Camelot codes like "8A", "9B"
+
+    Returns:
+        distance: float — 0 (identical) through 6 (opposite on wheel)
+    """
+    if not key1 or not key2 or key1 == "Unknown" or key2 == "Unknown":
+        return 6.0
+    try:
+        num1 = int(key1[:-1])
+        letter1 = key1[-1]
+        num2 = int(key2[:-1])
+        letter2 = key2[-1]
+    except (ValueError, IndexError):
+        return 6.0
+
+    # Relative key (same number, different letter) = 0.5 steps
+    if num1 == num2 and letter1 != letter2:
+        return 0.5
+
+    # Circular distance on 1-12 wheel
+    circular_diff = abs(num1 - num2)
+    circular_diff = min(circular_diff, 12 - circular_diff)
+
+    # Cross-mode adds +0.5 penalty
+    mode_penalty = 0.5 if letter1 != letter2 else 0.0
+    return circular_diff + mode_penalty
+
+
+def get_harmonic_compatibility_score(key1, key2):
+    """
+    Calculate a 0-100 harmonic compatibility score between two Camelot keys.
+
+    Scoring bands (derived from music theory):
+      100 — Identical key
+       95 — Relative major/minor (same number, A↔B)
+       88 — One step on same mode ring (±1 wheel position)
+       78 — One step, crossing mode rings
+       65 — Two steps, same mode
+       50 — Two steps, crossing modes
+       35 — Three steps, same mode
+       20 — Three+ steps or large distance
+
+    Args:
+        key1, key2: Camelot codes like "8A", "9B"
+
+    Returns:
+        dict with:
+          - score: int 0-100
+          - label: human-readable compatibility label
+          - reasoning: one-line explanation
+    """
+    if key1 == key2:
+        return {"score": 100, "label": "Perfect match",
+                "reasoning": "Identical key — seamless harmonic overlap."}
+
+    try:
+        num1 = int(key1[:-1])
+        letter1 = key1[-1]
+        num2 = int(key2[:-1])
+        letter2 = key2[-1]
+    except (ValueError, IndexError):
+        return {"score": 50, "label": "Unknown", "reasoning": "Could not parse Camelot codes."}
+
+    # Relative key
+    if num1 == num2 and letter1 != letter2:
+        return {"score": 95, "label": "Relative key",
+                "reasoning": "Relative major/minor pair — share all notes."}
+
+    circ = abs(num1 - num2)
+    circ = min(circ, 12 - circ)
+    same_mode = (letter1 == letter2)
+
+    if circ == 1 and same_mode:
+        return {"score": 88, "label": "Adjacent (5th up/down)",
+                "reasoning": "One wheel step — strong 5th-interval relationship."}
+    if circ == 1 and not same_mode:
+        return {"score": 78, "label": "Adjacent cross-mode",
+                "reasoning": "One step and mode switch — bright or dark colour change."}
+    if circ == 2 and same_mode:
+        return {"score": 65, "label": "Two steps (same mode)",
+                "reasoning": "Two wheel positions apart — usable with care."}
+    if circ == 2 and not same_mode:
+        return {"score": 50, "label": "Two steps (cross-mode)",
+                "reasoning": "Two steps + mode change — plan the transition carefully."}
+    if circ == 3 and same_mode:
+        return {"score": 38, "label": "Three steps",
+                "reasoning": "Three wheel positions — clashing harmonics likely."}
+    if circ <= 4:
+        return {"score": 25, "label": "Distant",
+                "reasoning": "Large harmonic distance — clash zone, use FX/filter."}
+    return {"score": 10, "label": "Incompatible",
+            "reasoning": "Opposite sides of the wheel — strong harmonic conflict."}
+
+
+def get_transition_reasoning(key1, key2, bpm1=None, bpm2=None):
+    """
+    Return a human-readable explanation + technique suggestions for a transition.
+
+    Args:
+        key1, key2: Camelot codes
+        bpm1, bpm2: Optional BPM values
+
+    Returns:
+        dict with 'explanation' (str) and 'techniques' (list of str)
+    """
+    compat = get_harmonic_compatibility_score(key1, key2)
+    score = compat["score"]
+    techniques = []
+
+    if score >= 95:
+        techniques = ["Hard cut", "Long crossfade", "EQ swap"]
+    elif score >= 80:
+        techniques = ["Beatmatch + crossfade", "Low-pass filter sweep",
+                      "Short loop transition"]
+    elif score >= 60:
+        techniques = ["Filter sweep (hi-pass from new track)",
+                      "Reverb/delay tail on outgoing", "Acappella or drum-only bridge"]
+    elif score >= 35:
+        techniques = ["Pitch shift one track ±1 semitone",
+                      "Use outro/intro instrumental sections",
+                      "Effects-heavy transition (reverb + echo)"]
+    else:
+        techniques = ["Avoid direct mix — use a bridge track",
+                      "Full stop + silence gap", "Scratch or DJ technique for contrast"]
+
+    if bpm1 and bpm2:
+        diff = abs(bpm1 - bpm2)
+        if diff > 6:
+            techniques.append(f"Beatmatch needed: adjust by {diff:.1f} BPM")
+
+    return {
+        "compatibility": compat,
+        "explanation": compat["reasoning"],
+        "techniques": techniques
+    }
 
 def get_harmonic_path(start_key, end_key, max_steps=12):
     """

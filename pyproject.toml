@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "camel-hot"
+version = "1.0.0"
+description = "DJ Harmonic Analyzer — key detection, Camelot mapping, library organization and harmonic playlist generation"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+keywords = ["dj", "music", "harmonic-mixing", "camelot", "bpm", "key-detection", "audio-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "PyQt5>=5.15.0",
+    "librosa>=0.10.0",
+    "matplotlib>=3.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-qt>=4.0",
+]
+
+[project.scripts]
+camel-hot = "main:main_entry"
+
+[project.urls]
+Homepage      = "https://github.com/your-username/camel-hot"
+Issues        = "https://github.com/your-username/camel-hot/issues"
+Changelog     = "https://github.com/your-username/camel-hot/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["audio_analysis*", "gui*", "utils*"]
+
+# ── pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts      = "-v --tb=short"
+markers = [
+    "unit: fast unit tests (no audio files required)",
+    "integration: tests that need real audio files in input_audio/",
+    "gui: tests that require a display / Qt",
+]
+
+# ── coverage ──────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source   = ["audio_analysis", "gui", "utils"]
+omit     = ["*/tests/*", "*/__pycache__/*", "*/venv/*", "*/.venv/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

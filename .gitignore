@@ -1,9 +1,50 @@
+# Virtual environments
 venv/
+.venv/
+env/
+
+# Python bytecode
 __pycache__/
 *.pyc
-.DS_Store
+*.pyo
+*.pyd
+
+# Distribution / packaging
 *.egg-info/
 dist/
 build/
+*.egg
+MANIFEST
+
+# Environment / secrets
 .env
+.env.*
+
+# IDE & OS
+.DS_Store
 .vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+
+# Logs (keep the logs/ directory but ignore log files)
+logs/*.log
+*.log
+
+# User-generated runtime output (not part of the source repo)
+input_audio/
+output_audio/
+*.m3u
+
+# Coverage & test artefacts
+.coverage
+htmlcov/
+.pytest_cache/
+coverage.xml
+
+# MyPy / type-checking cache
+.mypy_cache/
+
+# PyInstaller / packaging
+*.spec

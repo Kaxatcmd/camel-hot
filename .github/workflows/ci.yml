@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+
+jobs:
+  test:
+    name: "Python ${{ matrix.python-version }} · ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.8", "3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # ── System-level audio deps (librosa needs libsndfile on Linux) ──────
+      - name: Install system audio libs (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libsndfile1 ffmpeg
+          # Provide a virtual display so PyQt5 can import without crashing
+          sudo apt-get install -y xvfb
+
+      - name: Install system audio libs (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libsndfile ffmpeg
+
+      # ── Python dependencies ───────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      # ── Unit tests (no display, no audio files needed) ───────────────────
+      - name: Run unit tests (Linux — virtual display)
+        if: runner.os == 'Linux'
+        env:
+          DISPLAY: ":99"
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 &
+          python -m pytest tests/unit/ -v -m "not gui and not integration" \
+            --cov=audio_analysis --cov=gui/file_manager --cov=utils --cov=config \
+            --cov-report=xml --cov-report=term-missing
+
+      - name: Run unit tests (Windows / macOS)
+        if: runner.os != 'Linux'
+        run: |
+          python -m pytest tests/unit/ -v -m "not gui and not integration" \
+            --cov=audio_analysis --cov=gui/file_manager --cov=utils --cov=config \
+            --cov-report=xml --cov-report=term-missing
+
+      # ── Upload coverage report ────────────────────────────────────────────
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  lint:
+    name: "Lint (flake8)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install flake8
+        run: pip install flake8
+      - name: Run flake8
+        run: |
+          # E501=line too long, W503=line break before binary operator — both common in PyQt5 code
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
+            --exclude=venv,.venv,__pycache__,build,dist,_archived_docs
