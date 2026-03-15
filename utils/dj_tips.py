@@ -32,6 +32,17 @@ class DJTipsManager:
         "🌟 Practice transitions during rehearsal, not during the actual performance.",
         "📱 Keep detailed notes on successful track pairings for future reference.",
         "🎪 Remember: harmonic mixing is a tool, not the law – context is everything!",
+        "📚 Understanding Camelot Wheel notation improves your harmonic mixing accuracy.",
+        "✅ Always check key compatibility before mixing tracks to ensure smooth blending.",
+        "🎚️ BPM matching is crucial for seamless beat blending and audience flow.",
+        "🔥 Energy levels affect track selection – build your set with dynamic peaks and valleys.",
+        "🔗 Use the Compatibility tab to identify tracks that work exceptionally well together.",
+        "📂 Create themed playlists by musical key for faster track selection during live sets.",
+        "💻 Professional DJ software uses advanced harmonic analysis for competitive advantage.",
+        "🎶 Groove and rhythm characteristics help maintain audience engagement throughout.",
+        "📊 Analyzing BPM trends helps understand artist production style and energy patterns.",
+        "🎛️ Organize your music library by key to master harmonic mixing techniques faster.",
+        "🎲 Tips appear randomly – refresh often to discover new mixing advice and insights.",
     ]
     
     # Tips in Portuguese
@@ -56,6 +67,17 @@ class DJTipsManager:
         "🌟 Pratique transições durante ensaios, não durante a performance real.",
         "📱 Mantenha anotações detalhadas de associações de faixas bem-sucedidas.",
         "🎪 Lembre-se: mistura harmônica é uma ferramenta, não uma lei – contexto é tudo!",
+        "📚 Compreender a notação da Roda Camelot melhora sua precisão na mistura harmônica.",
+        "✅ Sempre verifique a compatibilidade de tom antes de misturar faixas para suavidade.",
+        "🎚️ Sincronização de BPM é crucial para fusão de batidas perfeita e fluxo da audiência.",
+        "🔥 Níveis de energia afetam seleção de faixas – construa seu set com picos dinâmicos.",
+        "🔗 Use a aba Compatibilidade para identificar faixas que funcionam excepcionalmente bem.",
+        "📂 Crie playlists temáticas por tom musical para seleção mais rápida durante apresentações.",
+        "💻 Software profissional de DJ usa análise harmônica avançada para vantagem competitiva.",
+        "🎶 Características de groove ajudam manter envolvimento da audiência ao longo do tempo.",
+        "📊 Analisar tendências de BPM ajuda entender estilo de produção e padrões de energia.",
+        "🎛️ Organize sua biblioteca por tom para dominar técnicas de mistura harmônica rápido.",
+        "🎲 Dicas aparecem aleatoriamente – atualize frequentemente para descobrir novos conselhos.",
     ]
     
     # Tips in Spanish
@@ -80,6 +102,17 @@ class DJTipsManager:
         "🌟 Practica transiciones durante ensayos, no durante la presentación real.",
         "📱 Mantén notas detalladas de asociaciones de pistas exitosas para referencia futura.",
         "🎪 Recuerda: la mezcla armónica es una herramienta, no una ley – ¡el contexto es todo!",
+        "📚 Entender la notación de la Rueda Camelot mejora tu precisión en mezcla armónica.",
+        "✅ Siempre verifica la compatibilidad de tonalidad antes de mezclar pistas para suavidad.",
+        "🎚️ La sincronización de BPM es crucial para fusión de ritmo perfecta y flujo de audiencia.",
+        "🔥 Los niveles de energía afectan selección de pistas – construye tu set con picos dinámicos.",
+        "🔗 Usa la pestaña Compatibilidad para identificar pistas que funcionan excepcionalmente bien.",
+        "📂 Crea listas de reproducción temáticas por tonalidad para selección más rápida en vivo.",
+        "💻 El software profesional de DJ usa análisis armónico avanzado para ventaja competitiva.",
+        "🎶 Las características de groove ayudan mantener engagement de la audiencia todo el tiempo.",
+        "📊 Analizar tendencias de BPM ayuda entender estilo de producción y patrones de energía.",
+        "🎛️ Organiza tu biblioteca por tonalidad para dominar técnicas de mezcla armónica rápido.",
+        "🎲 Los consejos aparecen aleatoriamente – refresca frecuentemente para nuevas recomendaciones.",
     ]
     
     def __init__(self, language='ENG'):
@@ -125,3 +158,7 @@ class DJTipsManager:
     def get_tip_count(self):
         """Get total number of tips"""
         return len(self.tips)
+    
+    def get_last_tip_index(self):
+        """Get the index of the last tip shown (1-based for display)"""
+        return self.last_tip_index + 1

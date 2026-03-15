@@ -12,8 +12,41 @@ Key Features:
 """
 
 import os
+import re
 import shutil
 from pathlib import Path
+
+
+def get_next_org_number(target_directory):
+    """
+    Find the next available CH_Org number in the target directory.
+
+    Scans for existing CH_Org[N] folders and returns max(N) + 1.
+    Returns 1 if none exist yet.
+
+    Args:
+        target_directory: Directory to scan
+
+    Returns:
+        Integer - the next available organization number
+    """
+    path = Path(target_directory)
+    if not path.exists():
+        return 1
+
+    existing_numbers = []
+    try:
+        for item in path.iterdir():
+            if item.is_dir():
+                match = re.match(r'^CH_Org(\d+)$', item.name, re.IGNORECASE)
+                if match:
+                    existing_numbers.append(int(match.group(1)))
+    except PermissionError:
+        return 1
+
+    if not existing_numbers:
+        return 1
+    return max(existing_numbers) + 1
 
 
 def find_audio_files(directory, extensions=None):
@@ -57,113 +90,126 @@ def find_audio_files(directory, extensions=None):
     return [str(f) for f in audio_files]
 
 
-def organize_by_key(input_directory, output_directory, move_files=False):
+def organize_by_key(input_directory, output_directory, move_files=False,
+                    parent_folder_name=None, progress_callback=None):
     """
-    Organize audio files into folders based on their musical key.
-    
-    This is like having a DJ library where everything is sorted
-    by Camelot key. You can find compatible tracks instantly!
-    
-    How it works:
-    1. Find all audio files in the input folder
-    2. Analyze each file to detect its key
-    3. Create folders for each Camelot key (e.g., "8A", "9B")
-    4. Copy (or move) files into their matching folder
-    
+    Organize audio files into a hierarchical folder structure based on Camelot key.
+
+    When *parent_folder_name* is provided (e.g. "CH_Org1") the output looks like::
+
+        output_directory/
+        └── CH_Org1/
+            ├── 8A_Camelot/  ← tracks detected as 8A
+            ├── 8B_Camelot/
+            ├── Unclassified/  ← tracks whose key could not be detected
+            └── ...
+
+    When *parent_folder_name* is omitted the flat legacy behaviour is preserved
+    (key folders created directly inside *output_directory*).
+
     Args:
-        input_directory: Where to look for audio files
-        output_directory: Where to put the organized files
-        move_files: If True, removes from original location. 
-                    If False, copies (safer - keeps originals!)
-    
+        input_directory:    Where to look for audio files.
+        output_directory:   Destination root directory.
+        move_files:         If True, moves files (removes originals).
+                            If False (default), copies — originals are preserved.
+        parent_folder_name: Optional name for the top-level container folder.
+                            Supports the CH_Org[N] naming convention.
+
     Returns:
-        Summary dictionary with organizing results
-    
-    Example:
-        >>> result = organize_by_key("/downloads", "/music/organized")
-        >>> print(f"Moved {result['moved_count']} files")
-        Moved 50 files
+        Summary dictionary with fields:
+            total_files, organized_count, errors, by_key,
+            parent_folder, parent_folder_name
     """
-    # Make sure output directory exists
-    Path(output_directory).mkdir(parents=True, exist_ok=True)
-    
+    # Resolve base output path
+    if parent_folder_name:
+        base_path = Path(output_directory) / parent_folder_name
+    else:
+        base_path = Path(output_directory)
+
+    base_path.mkdir(parents=True, exist_ok=True)
+
     # Find all audio files
     audio_files = find_audio_files(input_directory)
-    
-    # Track what happened
+
     results = {
         "total_files": len(audio_files),
         "organized_count": 0,
         "errors": [],
-        "by_key": {}  # Count files per key
+        "by_key": {},
+        "parent_folder": str(base_path),
+        "parent_folder_name": parent_folder_name,
     }
-    
-    # Import here to avoid circular imports
+
+    # Import here to avoid circular imports at module load time
     from audio_analysis.key_detection import analyze_track
-    
+
     print(f"🔍 Found {len(audio_files)} audio files")
-    
-    for file_path in audio_files:
+    _total = len(audio_files)
+
+    for _idx, file_path in enumerate(audio_files):
+        if progress_callback:
+            try:
+                if progress_callback(Path(file_path).name, _idx, _total):
+                    results['cancelled'] = True
+                    break
+            except Exception:
+                pass
         try:
-            # Analyze this track
             analysis = analyze_track(file_path)
-            
-            # Get the Camelot key (or Unknown)
             camelot = analysis.get('camelot', 'Unknown')
-            
-            if camelot == 'Unknown':
-                # Skip files we couldn't analyze
+
+            # Determine the subfolder label
+            if camelot and camelot != 'Unknown':
+                folder_label = f"{camelot}_Camelot"
+                key_id = camelot
+            else:
+                folder_label = 'Unclassified'
+                key_id = 'Unclassified'
+
+            key_folder = base_path / folder_label
+            key_folder.mkdir(exist_ok=True)
+
+            filename = Path(file_path).name
+            destination = key_folder / filename
+
+            # Skip duplicates gracefully
+            if destination.exists():
                 results['errors'].append({
                     'file': file_path,
-                    'reason': 'Could not detect key'
+                    'reason': f'File already exists in {folder_label}'
                 })
                 continue
-            
-            # Create folder for this key if it doesn't exist
-            key_folder = Path(output_directory) / camelot
-            key_folder.mkdir(exist_ok=True)
-            
-            # Get the filename
-            filename = Path(file_path).name
-            
-            # Build the destination path
-            destination = key_folder / filename
-            
-            # Copy or move the file
+
             if move_files:
-                shutil.move(file_path, destination)
+                shutil.move(file_path, str(destination))
             else:
-                shutil.copy2(file_path, destination)
-            
-            # Track success
+                shutil.copy2(file_path, str(destination))
+
             results['organized_count'] += 1
-            
-            # Track by key
-            if camelot not in results['by_key']:
-                results['by_key'][camelot] = []
-            results['by_key'][camelot].append(filename)
-            
-            print(f"  ✓ {filename} → {camelot}")
-        
+
+            if key_id not in results['by_key']:
+                results['by_key'][key_id] = []
+            results['by_key'][key_id].append(filename)
+
+            print(f"  ✓ {filename} → {folder_label}")
+
         except Exception as e:
-            # Something went wrong with this file
             results['errors'].append({
                 'file': file_path,
                 'reason': str(e)
             })
-    
-    # Print summary
+
     print(f"\n📊 Summary:")
-    print(f"  Total files: {results['total_files']}")
-    print(f"  Organized: {results['organized_count']}")
-    print(f"  Errors: {len(results['errors'])}")
-    print(f"  Keys found: {', '.join(sorted(results['by_key'].keys()))}")
-    
+    print(f"  Total files : {results['total_files']}")
+    print(f"  Organized   : {results['organized_count']}")
+    print(f"  Skipped     : {len(results['errors'])}")
+    print(f"  Keys found  : {', '.join(sorted(results['by_key'].keys()))}")
+
     return results
 
 
-def create_playlist(input_directory, output_file, target_key=None, 
-                    bpm_range=None, max_songs=20):
+def create_playlist(input_directory, output_file, target_key=None,
+                    bpm_range=None, max_songs=20, progress_callback=None):
     """
     Create an M3U playlist of harmonically compatible songs.
     
@@ -194,7 +240,8 @@ def create_playlist(input_directory, output_file, target_key=None,
     """
     # Find all audio files
     audio_files = find_audio_files(input_directory)
-    
+    _total = len(audio_files)
+
     # Track playlist entries
     playlist = []
     
@@ -204,11 +251,18 @@ def create_playlist(input_directory, output_file, target_key=None,
     
     print(f"🎵 Building playlist...")
     
-    for file_path in audio_files:
+    for _idx, file_path in enumerate(audio_files):
         # Stop if we have enough songs
         if len(playlist) >= max_songs:
             break
-        
+
+        if progress_callback:
+            try:
+                if progress_callback(Path(file_path).name, _idx, _total):
+                    break
+            except Exception:
+                pass
+
         try:
             # Analyze this track
             analysis = analyze_track(file_path)
@@ -291,9 +345,10 @@ def copy_with_metadata(source, destination, analysis):
 # Alias para manter compatibilidade com código antigo
 create_harmonic_playlist = create_playlist
 
-def create_harmonic_sequence_playlist(input_directory, output_file, 
+def create_harmonic_sequence_playlist(input_directory, output_file,
                                       start_key, sequence_length=8,
-                                      direction='forward', max_songs_per_key=3):
+                                      direction='forward', max_songs_per_key=3,
+                                      progress_callback=None):
     """
     Create a playlist following a harmonic sequence path.
     
@@ -334,8 +389,15 @@ def create_harmonic_sequence_playlist(input_directory, output_file,
     
     # Organize files by key
     files_by_key = {}
-    
-    for file_path in audio_files:
+    _total = len(audio_files)
+
+    for _idx, file_path in enumerate(audio_files):
+        if progress_callback:
+            try:
+                if progress_callback(Path(file_path).name, _idx, _total):
+                    break
+            except Exception:
+                pass
         try:
             analysis = analyze_track(file_path)
             key = analysis.get('camelot', 'Unknown')
@@ -378,7 +440,8 @@ def create_harmonic_sequence_playlist(input_directory, output_file,
 
 
 def create_key_to_key_playlist(input_directory, output_file,
-                               start_key, target_key, max_songs=30):
+                               start_key, target_key, max_songs=30,
+                               progress_callback=None):
     """
     Create a playlist that transitions from one key to another.
     
@@ -416,8 +479,15 @@ def create_key_to_key_playlist(input_directory, output_file,
     
     # Organize files by key
     files_by_key = {}
-    
-    for file_path in audio_files:
+    _total = len(audio_files)
+
+    for _idx, file_path in enumerate(audio_files):
+        if progress_callback:
+            try:
+                if progress_callback(Path(file_path).name, _idx, _total):
+                    break
+            except Exception:
+                pass
         try:
             analysis = analyze_track(file_path)
             key = analysis.get('camelot', 'Unknown')
@@ -468,7 +538,8 @@ def create_key_to_key_playlist(input_directory, output_file,
 
 
 def create_camelot_zone_playlist(input_directory, output_file,
-                                 target_key, zone_size=3, max_songs=50):
+                                 target_key, zone_size=3, max_songs=50,
+                                 progress_callback=None):
     """
     Create a focused playlist within a Camelot "zone".
     
@@ -498,26 +569,34 @@ def create_camelot_zone_playlist(input_directory, output_file,
     
     # Find all audio files
     audio_files = find_audio_files(input_directory)
-    
+
     print(f"🎼 Criando playlist de zona compatível: {target_key} (raio {zone_size})")
-    
+
     playlist = []
-    
-    for file_path in audio_files:
+    _total = len(audio_files)
+
+    for _idx, file_path in enumerate(audio_files):
         if len(playlist) >= max_songs:
             break
-        
+
+        if progress_callback:
+            try:
+                if progress_callback(Path(file_path).name, _idx, _total):
+                    break
+            except Exception:
+                pass
+
         try:
             analysis = analyze_track(file_path)
             key = analysis.get('camelot', 'Unknown')
-            
+
             # Check if this key is within our zone
             if is_compatible_keys(key, target_key):
                 playlist.append(file_path)
                 print(f"  ✓ Added: {Path(file_path).name} ({key})")
         except Exception as e:
             print(f"  ✗ Erro ao analisar {file_path}: {e}")
-    
+
     # Write the playlist file
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("#EXTM3U\n")
@@ -525,11 +604,157 @@ def create_camelot_zone_playlist(input_directory, output_file,
         f.write(f"# Center: {target_key}\n")
         f.write(f"# Zone Size: {zone_size}\n")
         f.write(f"# All tracks are harmonically compatible!\n\n")
-        
+
         for file_path in playlist:
             f.write(f"{file_path}\n")
-    
+
     print(f"\n✅ Zone playlist saved: {output_file}")
     print(f"   Total songs: {len(playlist)}")
-    
+
     return playlist
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: Intelligent sequencing and next-track suggestions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def optimize_playlist_order(analyses, strategy="energy_arc"):
+    """
+    Reorder a list of already-analysed tracks for optimal flow.
+
+    Strategies:
+      'energy_arc'  — build from low to a climax then cool down
+      'harmonic'    — maximise harmonic compatibility between consecutive tracks
+      'mood'        — cluster by mood for emotional continuity
+
+    Args:
+        analyses: List of analysis dicts (from analyze_track()).  Each must
+                  have at least 'file_path' and 'camelot'.
+        strategy: Ordering strategy (see above)
+
+    Returns:
+        Ordered list of analysis dicts.
+    """
+    if not analyses:
+        return []
+
+    try:
+        from utils.transition_scoring import calculate_transition_score
+
+        if strategy == "energy_arc":
+            # Sort by numeric energy: low → high → low (arc)
+            def energy_key(a):
+                e = a.get("energy") or {}
+                return e.get("numeric_score", 5)
+
+            scored = sorted(analyses, key=energy_key)
+            n = len(scored)
+            # Build arc: first half ascending, second half descending
+            ascending  = scored[:n // 2]
+            descending = list(reversed(scored[n // 2:]))
+            return ascending + descending
+
+        elif strategy == "harmonic":
+            # Greedy nearest-neighbour on harmonic score
+            remaining = list(analyses)
+            ordered   = [remaining.pop(0)]
+            while remaining:
+                current = ordered[-1]
+                best_idx = 0
+                best_score = -1
+                for i, candidate in enumerate(remaining):
+                    score = calculate_transition_score(current, candidate).get("harmonic_score", 0)
+                    if score > best_score:
+                        best_score = score
+                        best_idx = i
+                ordered.append(remaining.pop(best_idx))
+            return ordered
+
+        elif strategy == "mood":
+            # Group by primary mood, then by energy within group
+            from collections import defaultdict
+            groups = defaultdict(list)
+            for a in analyses:
+                mood = (a.get("mood") or {}).get("primary_mood", "Unknown")
+                groups[mood].append(a)
+            ordered = []
+            for mood_tracks in groups.values():
+                mood_tracks.sort(key=lambda a: (a.get("energy") or {}).get("numeric_score", 5))
+                ordered.extend(mood_tracks)
+            return ordered
+
+        else:
+            return analyses
+
+    except Exception as e:
+        print(f"Error optimising playlist order: {e}")
+        return analyses
+
+
+def create_intelligent_playlist(input_directory, output_file,
+                                 strategy="energy_arc", max_songs=30,
+                                 target_key=None, bpm_range=None):
+    """
+    Create an intelligently ordered playlist using transition scoring.
+
+    Analyses all audio files, then orders them according to the chosen strategy
+    for a smooth, professional DJ set.
+
+    Args:
+        input_directory: Folder containing audio files
+        output_file: Where to save the playlist (.m3u)
+        strategy: 'energy_arc' | 'harmonic' | 'mood' (default 'energy_arc')
+        max_songs: Maximum tracks to include
+        target_key: Optional Camelot key filter
+        bpm_range: Optional (min, max) BPM filter tuple
+
+    Returns:
+        List of ordered file paths in the playlist
+    """
+    from audio_analysis.key_detection import analyze_track
+    from utils.camelot_map import is_compatible_keys
+
+    audio_files = find_audio_files(input_directory)
+    print(f"🔍 Found {len(audio_files)} audio files — analysing...")
+
+    analyses = []
+    for fp in audio_files:
+        if len(analyses) >= max_songs * 3:  # analyse extra for filtering
+            break
+        try:
+            a = analyze_track(fp)
+            cam = a.get("camelot", "Unknown")
+            bpm = a.get("bpm") or 0
+
+            if cam == "Unknown":
+                continue
+            if target_key and not is_compatible_keys(cam, target_key):
+                continue
+            if bpm_range:
+                min_b, max_b = bpm_range
+                if not (min_b <= bpm <= max_b):
+                    continue
+
+            analyses.append(a)
+        except Exception as e:
+            print(f"  ✗ {fp}: {e}")
+
+    if not analyses:
+        print("⚠️  No compatible tracks found.")
+        return []
+
+    # Trim to max_songs before optimising (expensive for large libraries)
+    analyses = analyses[:max_songs]
+    ordered  = optimize_playlist_order(analyses, strategy=strategy)
+
+    paths = [a["file_path"] for a in ordered]
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write("#EXTM3U\n")
+        f.write(f"# Intelligent Playlist — strategy: {strategy}\n")
+        f.write(f"# Target key: {target_key or 'Any'}  BPM range: {bpm_range or 'Any'}\n\n")
+        for fp in paths:
+            f.write(f"{fp}\n")
+
+    print(f"\n✅ Intelligent playlist saved: {output_file}  ({len(paths)} tracks)")
+    return paths

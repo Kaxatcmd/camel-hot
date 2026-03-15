@@ -20,37 +20,89 @@ and typically uses libraries like librosa or Essentia.
 try:
     # Librosa is great for audio analysis
     import librosa
+    import numpy as np
     LIBROSA_AVAILABLE = True
 except ImportError:
     LIBROSA_AVAILABLE = False
     print("Tip: Install librosa for audio analysis with 'pip install librosa'")
 
 
-# Standard musical keys and their frequency characteristics
-# Each key has a unique "fingerprint" of which notes are emphasized
-KEY_PROFILES = {
-    # Major keys have a brighter, happier sound
-    # The numbers represent how much each note is emphasized (0-1 scale)
-    "C Major": {
-        "C": 1.0, "D": 0.6, "E": 0.8, "F": 0.7, 
-        "G": 0.9, "A": 0.5, "B": 0.6
-    },
-    "G Major": {
-        "G": 1.0, "A": 0.6, "B": 0.8, "C": 0.7,
-        "D": 0.9, "E": 0.5, "F#": 0.6
-    },
-    "D Minor": {
-        "D": 1.0, "E": 0.5, "F": 0.6, "G": 0.8,
-        "A": 0.7, "Bb": 0.5, "C": 0.6
-    },
-    # ... more keys would be defined here
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Krumhansl-Schmuckler key profiles (standard musicology / academic standard)
+# Each list has 12 values representing how strongly each chroma pitch class
+# (C, C#, D … B) is associated with that key.
+# ─────────────────────────────────────────────────────────────────────────────
+_KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09,
+              2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+_KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53,
+              2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+
+# Note names for all 12 semitones
+NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F",
+              "F#", "G", "G#", "A", "A#", "B"]
 
 # All notes in the chromatic scale (all 12 semitones)
-ALL_NOTES = [
-    "C", "C#", "D", "D#", "E", "F",
-    "F#", "G", "G#", "A", "A#", "B"
-]
+ALL_NOTES = NOTE_NAMES  # backward-compat alias
+
+
+def _pearson_correlation(x, y):
+    """Pearson correlation between two equal-length sequences."""
+    import math
+    n = len(x)
+    mean_x = sum(x) / n
+    mean_y = sum(y) / n
+    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y))
+    denom = math.sqrt(sum((xi - mean_x) ** 2 for xi in x) *
+                      sum((yi - mean_y) ** 2 for yi in y))
+    return num / denom if denom > 0 else 0.0
+
+
+def _best_key_from_chroma(chroma_vector):
+    """
+    Use the Krumhansl-Schmuckler algorithm to find the best-matching key.
+
+    Correlates the 12-element chroma vector against major and minor templates
+    for all 12 root notes and returns the best match + confidence.
+
+    Args:
+        chroma_vector: List/array of 12 floats (chroma energies C…B)
+
+    Returns:
+        (key_name, confidence, all_scores)
+          key_name  \u2014 'C Major', 'A Minor', etc.
+          confidence \u2014 Pearson r of the winning template (0-1 clamped)
+          all_scores \u2014 dict mapping every key name to its correlation
+    """
+    chroma_list = list(chroma_vector)
+    best_key = "C Major"
+    best_score = -2.0
+    all_scores = {}
+
+    for root_idx in range(12):
+        # Rotate templates to align with this root note
+        major_template = _KS_MAJOR[root_idx:] + _KS_MAJOR[:root_idx]
+        minor_template = _KS_MINOR[root_idx:] + _KS_MINOR[:root_idx]
+
+        major_r = _pearson_correlation(chroma_list, major_template)
+        minor_r = _pearson_correlation(chroma_list, minor_template)
+
+        root_name = NOTE_NAMES[root_idx]
+        major_key = f"{root_name} Major"
+        minor_key = f"{root_name} Minor"
+
+        all_scores[major_key] = major_r
+        all_scores[minor_key] = minor_r
+
+        if major_r > best_score:
+            best_score = major_r
+            best_key = major_key
+        if minor_r > best_score:
+            best_score = minor_r
+            best_key = minor_key
+
+    # Pearson r is [-1, 1]; clamp positive range to use as confidence
+    confidence = max(0.0, min(best_score, 1.0))
+    return best_key, confidence, all_scores
 
 
 def _note_to_frequency(note_name):
@@ -154,140 +206,312 @@ def _frequency_to_note(frequency):
 
 def detect_key_from_audio(file_path):
     """
-    Detect the musical key of an audio file.
-    
-    Usa análise chroma (12 notas musicais) para detectar a tonalidade.
-    
+    Detect the musical key of an audio file using Krumhansl-Schmuckler profiles.
+
+    Analyses the full chroma vector of the track and correlates it against all
+    24 major/minor templates. Also reports secondary key candidates.
+
     Args:
         file_path: Path to the audio file (mp3, wav, etc.)
-    
+
     Returns:
-        A dictionary with:
-        - 'key': The detected key name (e.g., "C Major")
-        - 'camelot': The Camelot notation (e.g., "8B")
-        - 'confidence': How sure we are about this detection (0-1)
+        dict with:
+          - 'key': The detected key name (e.g., "C Major")
+          - 'camelot': The Camelot notation (e.g., "8B")
+          - 'confidence': How sure we are (0-1, Pearson r of best template)
+          - 'secondary_key': Second-best key candidate
+          - 'secondary_camelot': Camelot code for secondary key
     """
     if not LIBROSA_AVAILABLE:
         return {
             "key": "Unknown - librosa not installed",
             "camelot": "Unknown",
-            "confidence": 0.0
+            "confidence": 0.0,
+            "secondary_key": None,
+            "secondary_camelot": None,
         }
-    
+
     try:
-        # Carregar áudio
-        y, sr = librosa.load(file_path, duration=30)
-        
-        # Calcular chroma (energia de cada nota: C, C#, D, D#, E, F, etc)
+        # Load first 60 s for overall key; use CQT chroma (more accurate for key)
+        y, sr = librosa.load(file_path, duration=60)
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
-        
-        # Média da energia em cada nota ao longo do tempo
-        chroma_mean = chroma.mean(axis=1)
-        
-        # Encontrar a nota com mais energia (root note)
-        root_index = chroma_mean.argmax()
-        confidence = chroma_mean[root_index]
-        
-        # Mapeamento de índice para nota
-        note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-        root_note = note_names[root_index]
-        
-        # Detectar se é major ou minor
-        is_major = _guess_scale_type(chroma_mean)
-        key_name = f"{root_note} {'Major' if is_major else 'Minor'}"
-        
-        # Converter para notação Camelot
+        chroma_mean = chroma.mean(axis=1)  # 12-element vector
+
+        key_name, confidence, all_scores = _best_key_from_chroma(chroma_mean)
+
         from utils.camelot_map import get_camelot_key
         camelot = get_camelot_key(key_name)
-        
+
+        # Find secondary key (for tracks near a modulation boundary)
+        sorted_scores = sorted(all_scores.items(), key=lambda kv: kv[1], reverse=True)
+        secondary_key = sorted_scores[1][0] if len(sorted_scores) > 1 else None
+        secondary_camelot = get_camelot_key(secondary_key) if secondary_key else None
+
         return {
             "key": key_name,
             "camelot": camelot,
-            "confidence": min(confidence, 1.0)
+            "confidence": round(confidence, 3),
+            "secondary_key": secondary_key,
+            "secondary_camelot": secondary_camelot,
         }
-    
+
     except Exception as e:
         print(f"Erro ao detectar tonalidade: {e}")
         return {
             "key": f"Erro ao detectar: {str(e)}",
             "camelot": "Unknown",
-            "confidence": 0.0
+            "confidence": 0.0,
+            "secondary_key": None,
+            "secondary_camelot": None,
+        }
+
+
+def detect_key_segments(y, sr, segment_duration=30):
+    """
+    Detect the key in each time segment to find modulations.
+
+    Divides the audio into windows of *segment_duration* seconds and runs
+    the Krumhansl-Schmuckler algorithm independently on each segment.
+
+    Args:
+        y: Audio time-series (numpy array)
+        sr: Sample rate
+        segment_duration: Window length in seconds (default 30)
+
+    Returns:
+        list of dicts, one per segment:
+          { 'start_s', 'end_s', 'key', 'camelot', 'confidence' }
+    """
+    if not LIBROSA_AVAILABLE:
+        return []
+
+    try:
+        total_samples = len(y)
+        seg_samples = int(segment_duration * sr)
+        segments = []
+        from utils.camelot_map import get_camelot_key
+
+        offset = 0
+        while offset < total_samples:
+            end = min(offset + seg_samples, total_samples)
+            seg = y[offset:end]
+            if len(seg) < sr * 2:  # skip very short tails
+                break
+
+            chroma = librosa.feature.chroma_cqt(y=seg, sr=sr)
+            key_name, conf, _ = _best_key_from_chroma(chroma.mean(axis=1))
+            segments.append({
+                "start_s": round(offset / sr, 1),
+                "end_s": round(end / sr, 1),
+                "key": key_name,
+                "camelot": get_camelot_key(key_name),
+                "confidence": round(conf, 3),
+            })
+            offset += seg_samples
+
+        return segments
+    except Exception as e:
+        print(f"Error in segment key detection: {e}")
+        return []
+
+
+def detect_key_modulations(y, sr, segment_duration=30):
+    """
+    Detect key modulations (key changes) within a track.
+
+    Args:
+        y: Audio time-series
+        sr: Sample rate
+        segment_duration: Seconds per analysis window
+
+    Returns:
+        dict with:
+          - 'primary_key': Most common key across segments
+          - 'primary_camelot': Camelot code for primary key
+          - 'key_stability': 0-1 fraction of segments matching primary key
+          - 'modulations': list of dicts describing each detected key change
+            { 'timestamp_s', 'from_key', 'to_key', 'from_camelot', 'to_camelot' }
+          - 'segments': full segment list
+    """
+    if not LIBROSA_AVAILABLE:
+        return {
+            "primary_key": "Unknown",
+            "primary_camelot": "Unknown",
+            "key_stability": 0.0,
+            "modulations": [],
+            "segments": [],
+        }
+
+    try:
+        segments = detect_key_segments(y, sr, segment_duration)
+        if not segments:
+            return {
+                "primary_key": "Unknown",
+                "primary_camelot": "Unknown",
+                "key_stability": 0.0,
+                "modulations": [],
+                "segments": [],
+            }
+
+        # Find dominant key
+        from collections import Counter
+        key_counts = Counter(s["key"] for s in segments)
+        primary_key = key_counts.most_common(1)[0][0]
+        from utils.camelot_map import get_camelot_key
+        primary_camelot = get_camelot_key(primary_key)
+
+        matching = sum(1 for s in segments if s["key"] == primary_key)
+        key_stability = matching / len(segments)
+
+        # Detect modulation events (consecutive segments with different keys)
+        modulations = []
+        for i in range(1, len(segments)):
+            prev = segments[i - 1]
+            curr = segments[i]
+            if curr["key"] != prev["key"]:
+                modulations.append({
+                    "timestamp_s": curr["start_s"],
+                    "from_key": prev["key"],
+                    "to_key": curr["key"],
+                    "from_camelot": prev["camelot"],
+                    "to_camelot": curr["camelot"],
+                })
+
+        return {
+            "primary_key": primary_key,
+            "primary_camelot": primary_camelot,
+            "key_stability": round(key_stability, 2),
+            "modulations": modulations,
+            "segments": segments,
+        }
+    except Exception as e:
+        print(f"Error detecting modulations: {e}")
+        return {
+            "primary_key": "Unknown",
+            "primary_camelot": "Unknown",
+            "key_stability": 0.0,
+            "modulations": [],
+            "segments": [],
         }
 
 
 def _guess_scale_type(chroma_vector):
     """
     Guess whether a track is in a major or minor scale.
-    
-    Analisa o padrão de notas para determinar major/minor.
-    Em escalas maiores, a 3ª e 5ª notas têm mais energia.
-    Em escalas menores, a 3ª (menor) tem menos energia.
+    Legacy helper kept for backward compatibility.
+    Delegates to the Krumhansl-Schmuckler algorithm now.
     """
     try:
-        # padrão major: notas 0(root), 4(3ª maior), 7(5ª) têm mais energia
-        # padrão minor: notas 0(root), 3(3ª menor), 7(5ª) têm mais energia
-        
-        if len(chroma_vector) < 8:
-            return True  # padrão: major
-        
-        # Normalizar
-        chroma_norm = chroma_vector / (chroma_vector.max() + 1e-10)
-        
-        # Score para major: 3ª maior (índice 4) tem mais energia que 3ª menor (índice 3)
-        major_score = chroma_norm[4] - chroma_norm[3]
-        
-        return major_score > 0
-    
-    except:
-        return True  # padrão: major
+        key_name, _, _ = _best_key_from_chroma(chroma_vector)
+        return "Major" in key_name
+    except Exception:
+        return True  # default: major
 
 
 def detect_bpm(file_path):
     """
     Detect the BPM (beats per minute) of an audio file.
-    
-    BPM tells you how fast the tempo is - important for DJs
-    to match tempos when mixing songs!
-    
+
+    Also returns a confidence score and a variability percentage that indicates
+    whether the tempo is steady or fluctuating.
+
     Args:
         file_path: Path to the audio file
-    
+
     Returns:
-        BPM value as a number, or None if detection failed
-    
-    Example:
-        >>> detect_bpm("house_track.mp3")
-        128
+        BPM value as a float, or None if detection failed.
+        (For extended info call detect_bpm_advanced().)
+    """
+    result = detect_bpm_advanced(file_path)
+    return result.get("bpm") if result else None
+
+
+def detect_bpm_advanced(file_path):
+    """
+    Advanced BPM detection with confidence and variability.
+
+    Args:
+        file_path: Path to the audio file
+
+    Returns:
+        dict with:
+          - 'bpm': primary BPM (float or None)
+          - 'bpm_confidence': 0-1 confidence score
+          - 'bpm_variability': 0-100 % variability (0 = rock-solid, 100 = chaotic)
+          - 'half_time_bpm': bpm / 2 (useful for double-time detection)
+          - 'double_time_bpm': bpm * 2
     """
     if not LIBROSA_AVAILABLE:
-        return None
-    
+        return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
+                "half_time_bpm": None, "double_time_bpm": None}
+
     try:
         import warnings
-        # Load the audio
-        y, sr = librosa.load(file_path, duration=30)
-        
-        # Use librosa's beat tracking (com compatibilidade com versões)
+        y, sr = librosa.load(file_path, duration=60)
+
+        # Onset envelope for variability analysis
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+
+        # Primary BPM estimate
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                tempo_arr = librosa.feature.rhythm.tempo(y=y, sr=sr)
+            except AttributeError:
+                tempo_arr = librosa.beat.tempo(y=y, sr=sr)
+
+        if hasattr(tempo_arr, '__iter__'):
+            bpm = float(tempo_arr[0]) if len(tempo_arr) > 0 else None
+        else:
+            bpm = float(tempo_arr) if tempo_arr else None
+
+        if not bpm or bpm <= 0:
+            return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
+                    "half_time_bpm": None, "double_time_bpm": None}
+
+        bpm = round(bpm, 1)
+
+        # Estimate BPM confidence from onset autocorrelation peak sharpness
         try:
-            # Versão nova (librosa >= 0.10)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                tempo = librosa.feature.rhythm.tempo(y=y, sr=sr)
-                if hasattr(tempo, '__iter__'):
-                    tempo = tempo[0] if len(tempo) > 0 else 0
-        except (AttributeError, TypeError):
-            # Versão antiga (librosa < 0.10)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                tempo = librosa.beat.tempo(y=y, sr=sr)
-                if hasattr(tempo, '__iter__'):
-                    tempo = tempo[0] if len(tempo) > 0 else 0
-        
-        return round(tempo) if tempo > 0 else None
-    
+            ac = librosa.autocorrelate(onset_env, max_size=sr // 2)
+            ac_norm = ac / (ac.max() + 1e-10)
+            confidence = float(ac_norm[1:].max())
+        except Exception:
+            confidence = 0.7
+
+        # Estimate variability: stdev of local BPM measured in 10 s windows
+        win_samples = int(10 * sr)
+        local_bpms = []
+        for start in range(0, len(y) - win_samples, win_samples):
+            seg = y[start:start + win_samples]
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    try:
+                        t = librosa.feature.rhythm.tempo(y=seg, sr=sr)
+                    except AttributeError:
+                        t = librosa.beat.tempo(y=seg, sr=sr)
+                local_bpms.append(float(t[0]) if hasattr(t, '__iter__') else float(t))
+            except Exception:
+                pass
+
+        if len(local_bpms) > 1:
+            variability = float(np.std(local_bpms) / (np.mean(local_bpms) + 1e-10) * 100)
+        else:
+            variability = 0.0
+
+        return {
+            "bpm": bpm,
+            "bpm_confidence": round(min(confidence, 1.0), 3),
+            "bpm_variability": round(min(variability, 100.0), 1),
+            "half_time_bpm": round(bpm / 2, 1),
+            "double_time_bpm": round(bpm * 2, 1),
+        }
+
     except Exception as e:
         print(f"Erro ao detectar BPM: {e}")
-        return None
+        return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
+                "half_time_bpm": None, "double_time_bpm": None}
 
 
 def analyze_track(file_path):
@@ -319,6 +543,22 @@ def analyze_track(file_path):
         This song is in 8A at 120 BPM
         Mood: Euphoric, Energy: High
     """
+def analyze_track(file_path):
+    """
+    Complete analysis of a track - key, BPM, energy, groove, mood, and modulations.
+
+    Maintains backward-compatible return shape while adding extended fields:
+      Required: file_path, key, camelot, bpm, duration, confidence
+      Extended: energy, groove, mood, secondary_key, secondary_camelot,
+                key_stability, modulations, bpm_confidence, bpm_variability,
+                half_time_bpm, double_time_bpm
+
+    Args:
+        file_path: Path to the audio file
+
+    Returns:
+        Dictionary described above.
+    """
     if not LIBROSA_AVAILABLE:
         return {
             "file_path": file_path,
@@ -328,70 +568,93 @@ def analyze_track(file_path):
             "duration": None,
             "error": "Install librosa: pip install librosa"
         }
-    
+
     try:
-        # Load the full audio
-        y, sr = librosa.load(file_path, duration=60)  # Carregar até 60 segundos
+        y, sr = librosa.load(file_path, duration=60)
         duration = librosa.get_duration(y=y, sr=sr)
-        
+
         print(f"🎵 Analisando: {file_path}")
         print(f"   ⏱️  Duração: {duration:.2f}s")
-        
-        # Get key and BPM
-        print(f"   🔍 Detectando tonalidade...")
+
+        # ── Key detection (Krumhansl-Schmuckler) ──────────────────────────────
+        print(f"   🔍 Detectando tonalidade (Krumhansl-Schmuckler)...")
         key_info = detect_key_from_audio(file_path)
-        
-        print(f"   ⏱️  Detectando BPM...")
-        bpm = detect_bpm(file_path)
-        
-        # Advanced analysis for transitions
+
+        # ── Modulation analysis ───────────────────────────────────────────────
+        print(f"   🔄 Analisando modulações...")
+        modulation_info = detect_key_modulations(y, sr, segment_duration=30)
+
+        # ── BPM (advanced) ────────────────────────────────────────────────────
+        print(f"   ⏱️  Detectando BPM (avançado)...")
+        bpm_info = detect_bpm_advanced(file_path)
+
+        # ── Energy ────────────────────────────────────────────────────────────
         print(f"   ⚡ Detectando nível de energia...")
         from audio_analysis.energy_detection import classify_energy_level
         energy = classify_energy_level(y, sr)
-        
+
+        # ── Groove ────────────────────────────────────────────────────────────
         print(f"   🥁 Analisando groove...")
         from audio_analysis.groove_analysis import classify_groove_type
         groove = classify_groove_type(y, sr)
-        
+
+        # ── Mood ──────────────────────────────────────────────────────────────
         print(f"   😊 Classificando humor...")
         from audio_analysis.mood_classification import classify_mood
         mood = classify_mood(y, sr)
-        
+
         result = {
+            # ── Core fields (backward-compatible) ──────────────────────────
             "file_path": file_path,
-            "key": key_info['key'],
-            "camelot": key_info['camelot'],
-            "bpm": bpm,
+            "key": key_info["key"],
+            "camelot": key_info["camelot"],
+            "bpm": bpm_info["bpm"],
             "duration": round(duration, 2),
-            "confidence": key_info['confidence'],
+            "confidence": key_info["confidence"],
+            # ── Enhanced key fields ─────────────────────────────────────────
+            "secondary_key": key_info.get("secondary_key"),
+            "secondary_camelot": key_info.get("secondary_camelot"),
+            "key_stability": modulation_info.get("key_stability", 1.0),
+            "modulations": modulation_info.get("modulations", []),
+            "key_segments": modulation_info.get("segments", []),
+            # ── Enhanced BPM fields ─────────────────────────────────────────
+            "bpm_confidence": bpm_info.get("bpm_confidence", 0.0),
+            "bpm_variability": bpm_info.get("bpm_variability", 0.0),
+            "half_time_bpm": bpm_info.get("half_time_bpm"),
+            "double_time_bpm": bpm_info.get("double_time_bpm"),
+            # ── Sub-analysis dicts ──────────────────────────────────────────
             "energy": energy,
             "groove": groove,
-            "mood": mood
+            "mood": mood,
         }
-        
+
         print(f"   ✅ Análise completa!")
-        print(f"      • Tonalidade: {result['key']}")
+        print(f"      • Tonalidade: {result['key']} (conf={result['confidence']:.2f})")
         print(f"      • Camelot: {result['camelot']}")
-        print(f"      • BPM: {result['bpm']}")
+        print(f"      • BPM: {result['bpm']} (var={result['bpm_variability']:.1f}%)")
+        print(f"      • Estabilidade tonal: {result['key_stability']:.0%}")
+        if modulation_info.get("modulations"):
+            print(f"      • Modulações detectadas: {len(modulation_info['modulations'])}")
         if energy:
-            print(f"      • Energia: {energy.get('level', 'Unknown')}")
+            print(f"      • Energia: {energy.get('level', 'Unknown')} "
+                  f"({energy.get('numeric_score', '?')}/10)")
         if groove:
-            print(f"      • Groove: {groove.get('type', 'Unknown')}")
+            print(f"      • Groove: {groove.get('type', 'Unknown')} "
+                  f"/ Família: {groove.get('groove_family', '?')}")
         if mood:
             print(f"      • Humor: {mood.get('primary_mood', 'Unknown')}")
-        
+
         return result
-    
+
     except Exception as e:
         print(f"❌ Erro ao analisar {file_path}: {e}")
         import traceback
         traceback.print_exc()
-        
         return {
             "file_path": file_path,
             "key": f"Erro: {str(e)}",
             "camelot": "Unknown",
             "bpm": None,
-            "duration": None
+            "duration": None,
         }
 
