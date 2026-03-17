@@ -645,7 +645,8 @@ class AnalysisWorker(QThread):
     finished = pyqtSignal()
     result = pyqtSignal(dict)
     error = pyqtSignal(str)
-    progress = pyqtSignal(int)  # Progress 0-100
+    progress = pyqtSignal(int, str)
+    file_tick = pyqtSignal(str, int, int)
     
     def __init__(self, file_path):
         super().__init__()
@@ -653,11 +654,13 @@ class AnalysisWorker(QThread):
     
     def run(self):
         try:
-            self.progress.emit(10)  # Started
+            fname = os.path.basename(self.file_path)
+            self.file_tick.emit(fname, 0, 1)
+            self.progress.emit(10, f"Analyzing: {fname}")
             result = analyze_track(self.file_path)
-            self.progress.emit(90)  # Almost done
+            self.progress.emit(90, "Formatting results…")
             self.result.emit(result)
-            self.progress.emit(100)  # Complete
+            self.progress.emit(100, "Analysis complete!")
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
@@ -785,6 +788,184 @@ class TransitionWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
             self.finished.emit()
+
+
+class WaveformWorker(QThread):
+    """Loads audio and computes waveform envelope + transition markers."""
+    waveform_ready = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, file_path, n_bars=300):
+        super().__init__()
+        self.file_path = file_path
+        self.n_bars = n_bars
+
+    def run(self):
+        try:
+            import librosa
+            import numpy as np
+            y, sr = librosa.load(self.file_path, sr=22050, duration=None)
+            # Compute RMS envelope using librosa (full track)
+            frame_length = max(512, 2 * (len(y) // self.n_bars))
+            hop_length = max(1, len(y) // self.n_bars)
+            rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+            # Resample to exact n_bars
+            if len(rms) > self.n_bars:
+                indices = np.linspace(0, len(rms) - 1, self.n_bars).astype(int)
+                bars = rms[indices]
+            else:
+                bars = rms
+            # Normalize to 0-1
+            peak = np.max(bars) if len(bars) > 0 else 1.0
+            if peak > 0:
+                bars = bars / peak
+            # Mild compression (sqrt) so quieter parts are more visible
+            bars = np.sqrt(bars)
+            bars = [float(b) for b in bars[:self.n_bars]]
+
+            # Detect transition points via spectral flux on chroma
+            hop_chroma = 512
+            chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_chroma)
+            # Compute chroma flux (frame-to-frame distance)
+            diff = np.sum(np.abs(np.diff(chroma, axis=1)), axis=0)
+            # Map flux frames to bar indices
+            n_flux = len(diff)
+            n_bars_actual = len(bars)
+            flux_per_bar = np.zeros(n_bars_actual)
+            for i, v in enumerate(diff):
+                idx = int(i * n_bars_actual / n_flux)
+                if idx < n_bars_actual:
+                    flux_per_bar[idx] = max(flux_per_bar[idx], v)
+
+            # Thresholds: key transitions (".") = top 5%, sub-key ("-") = top 15%
+            sorted_flux = np.sort(flux_per_bar[flux_per_bar > 0])
+            if len(sorted_flux) > 0:
+                key_thresh = np.percentile(sorted_flux, 95)
+                sub_thresh = np.percentile(sorted_flux, 85)
+            else:
+                key_thresh = sub_thresh = float('inf')
+
+            key_points = []   # bar indices for "."
+            sub_points = []   # bar indices for "-"
+            min_gap = max(3, n_bars_actual // 50)
+            last_mark = -min_gap
+            for i, v in enumerate(flux_per_bar):
+                if i - last_mark < min_gap:
+                    continue
+                if v >= key_thresh:
+                    key_points.append(i)
+                    last_mark = i
+                elif v >= sub_thresh:
+                    sub_points.append(i)
+                    last_mark = i
+
+            self.waveform_ready.emit({
+                'bars': bars,
+                'key_points': key_points,
+                'sub_points': sub_points,
+            })
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class WaveformWidget(QWidget):
+    """Lightweight waveform display using QPainter — centered/mirrored."""
+
+    def __init__(self, label="", color="#1DB954", parent=None):
+        super().__init__(parent)
+        self._bars = []
+        self._key_points = []
+        self._sub_points = []
+        self._label = label
+        self._color = QColor(color)
+        self.setMinimumHeight(100)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def set_data(self, data):
+        if isinstance(data, dict):
+            self._bars = data.get('bars', [])
+            self._key_points = data.get('key_points', [])
+            self._sub_points = data.get('sub_points', [])
+        else:
+            self._bars = data
+        self.update()
+
+    def set_label(self, text):
+        self._label = text
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+
+        # Background
+        painter.fillRect(0, 0, w, h, QColor(20, 20, 20, 200))
+
+        # Label at top-left
+        label_h = 18
+        if self._label:
+            painter.setPen(QColor(200, 200, 200))
+            painter.setFont(QFont("Inter", 9, QFont.Bold))
+            painter.drawText(8, 14, self._label)
+
+        if not self._bars:
+            painter.setPen(QColor(120, 120, 120))
+            painter.setFont(QFont("Inter", 10))
+            painter.drawText(self.rect(), Qt.AlignCenter, "Awaiting analysis...")
+            painter.end()
+            return
+
+        # Marker row sits between label and waveform
+        marker_y = label_h + 2
+        marker_h = 12
+        wave_top = marker_y + marker_h
+        wave_bottom = h - 4
+        draw_h = wave_bottom - wave_top
+        if draw_h < 10:
+            painter.end()
+            return
+
+        center_y = wave_top + draw_h / 2.0
+        n = len(self._bars)
+        bar_w = max(1.0, w / n)
+        half_h = draw_h / 2.0
+
+        # Draw center line
+        painter.setPen(QColor(80, 80, 80))
+        painter.drawLine(0, int(center_y), w, int(center_y))
+
+        # Draw mirrored bars
+        for i, amp in enumerate(self._bars):
+            arm = max(1, int(amp * half_h))
+            x = int(i * bar_w)
+            bw = max(1, int(bar_w) - 1)
+            c = QColor(self._color)
+            c.setAlpha(160 + int(amp * 95))
+            # Upper half (grows up from center)
+            painter.fillRect(x, int(center_y) - arm, bw, arm, c)
+            # Lower half (grows down from center)
+            c2 = QColor(self._color)
+            c2.setAlpha(120 + int(amp * 70))
+            painter.fillRect(x, int(center_y), bw, arm, c2)
+
+        # Draw key transition markers "." above waveform
+        marker_font = QFont("Inter", 10, QFont.Bold)
+        painter.setFont(marker_font)
+        for idx in self._key_points:
+            if 0 <= idx < n:
+                mx = int(idx * bar_w + bar_w / 2)
+                painter.setPen(QColor(255, 200, 50))
+                painter.drawText(mx - 3, marker_y + marker_h - 1, ".")
+
+        # Draw sub-key transition markers "-" above waveform
+        for idx in self._sub_points:
+            if 0 <= idx < n:
+                mx = int(idx * bar_w + bar_w / 2)
+                painter.setPen(QColor(180, 180, 180))
+                painter.drawText(mx - 3, marker_y + marker_h - 1, "-")
+
+        painter.end()
 
 
 # Palm tree SVG silhouette – gradient fills for depth and richness
@@ -1007,6 +1188,10 @@ class DJAnalyzerGUI(QMainWindow):
             color: #191414;
         }
         
+        QLabel {
+            min-height: 16px;
+        }
+        
         #central_widget {
             background: rgba(26, 77, 46, 0.1);
         }
@@ -1143,10 +1328,11 @@ class DJAnalyzerGUI(QMainWindow):
             color: #222222;
             border: 2px solid #cccccc;
             border-radius: 8px;
-            padding: 10px 14px;
+            padding: 6px 8px;
             font-size: 11px;
             font-family: 'Segoe UI', 'Roboto', sans-serif;
             font-weight: 500;
+            min-height: 18px;
         }
         
         QComboBox:hover {
@@ -1194,8 +1380,8 @@ class DJAnalyzerGUI(QMainWindow):
         }
         
         QComboBox QAbstractItemView::item {
-            padding: 8px 12px;
-            min-height: 30px;
+            padding: 6px 10px;
+            min-height: 26px;
             font-weight: 600;
             color: #222222;
             background: white;
@@ -1216,10 +1402,11 @@ class DJAnalyzerGUI(QMainWindow):
             color: #222222;
             border: 2px solid #cccccc;
             border-radius: 8px;
-            padding: 8px 12px;
+            padding: 6px 8px;
             font-size: 11px;
             font-family: 'Segoe UI', 'Roboto', sans-serif;
             font-weight: 500;
+            min-height: 18px;
         }
         
         QSpinBox:focus {
@@ -1454,9 +1641,10 @@ class DJAnalyzerGUI(QMainWindow):
         QComboBox {
             background: #1e1e1e; color: #E8E8E8;
             border: 2px solid #444444; border-radius: 8px;
-            padding: 10px 14px; font-size: 11px;
+            padding: 6px 8px; font-size: 11px;
             font-family: 'Segoe UI', 'Roboto', sans-serif;
             font-weight: 500;
+            min-height: 18px;
         }
         QComboBox:hover { 
             border: 2px solid #4A90E2;
@@ -1494,7 +1682,7 @@ class DJAnalyzerGUI(QMainWindow):
             padding: 4px;
         }
         QComboBox QAbstractItemView::item {
-            padding: 8px 12px; min-height: 30px; font-weight: 600;
+            padding: 6px 10px; min-height: 26px; font-weight: 600;
             color: #E8E8E8; background: #1e1e1e;
         }
         QComboBox QAbstractItemView::item:hover {
@@ -1506,9 +1694,10 @@ class DJAnalyzerGUI(QMainWindow):
         QSpinBox {
             background: #1e1e1e; color: #E8E8E8;
             border: 2px solid #444444; border-radius: 8px;
-            padding: 8px 12px; font-size: 11px;
+            padding: 6px 8px; font-size: 11px;
             font-family: 'Segoe UI', 'Roboto', sans-serif;
             font-weight: 500;
+            min-height: 18px;
         }
         QSpinBox:focus {
             border: 2px solid #4A90E2;
@@ -1544,6 +1733,7 @@ class DJAnalyzerGUI(QMainWindow):
         QLabel { 
             color: #E8E8E8;
             font-weight: 500;
+            min-height: 16px;
         }
         QLabel:disabled {
             color: #666666;
@@ -2422,6 +2612,7 @@ class DJAnalyzerGUI(QMainWindow):
             '#3B82F6': '#60a5fa',
             '#666':    '#a0a0a0',
             '#c0392b': '#e57373',
+            '#000000': '#E0E0E0',
         }
         _to_day = {v: k for k, v in _to_night.items()}
         color_map = _to_night if dark else _to_day
@@ -2672,30 +2863,32 @@ class DJAnalyzerGUI(QMainWindow):
             }
         """)
         card_layout = QVBoxLayout()
-        card_layout.setSpacing(12)
+        card_layout.setSpacing(10)
 
-        # Playlist mode
+        # Playlist mode — 2×2 grid so buttons don't clip
         mode_label = QLabel(self.translator.get('label_playlist_mode'))
         mode_label.setStyleSheet("font-weight: 700; color: #191414; font-size: 12px;")
         card_layout.addWidget(mode_label)
 
         self.pl_mode_group = QButtonGroup()
-        mode_layout = QHBoxLayout()
+        mode_grid = QGridLayout()
+        mode_grid.setSpacing(6)
         mode_simple = QRadioButton(self.translator.get('mode_simple_harmonic'))
         mode_sequence = QRadioButton(self.translator.get('mode_harmonic_sequence'))
         mode_transition = QRadioButton(self.translator.get('mode_key_transition'))
         mode_zone = QRadioButton(self.translator.get('mode_camelot_zone'))
+        for rb in (mode_simple, mode_sequence, mode_transition, mode_zone):
+            rb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.pl_mode_group.addButton(mode_simple, 0)
         self.pl_mode_group.addButton(mode_sequence, 1)
         self.pl_mode_group.addButton(mode_transition, 2)
         self.pl_mode_group.addButton(mode_zone, 3)
         mode_simple.setChecked(True)
-        mode_layout.addWidget(mode_simple)
-        mode_layout.addWidget(mode_sequence)
-        mode_layout.addWidget(mode_transition)
-        mode_layout.addWidget(mode_zone)
-        mode_layout.addStretch()
-        card_layout.addLayout(mode_layout)
+        mode_grid.addWidget(mode_simple, 0, 0)
+        mode_grid.addWidget(mode_sequence, 0, 1)
+        mode_grid.addWidget(mode_transition, 1, 0)
+        mode_grid.addWidget(mode_zone, 1, 1)
+        card_layout.addLayout(mode_grid)
 
         # Music folder row
         folder_label = QLabel(self.translator.get('label_music_folder'))
@@ -2725,57 +2918,87 @@ class DJAnalyzerGUI(QMainWindow):
         out_row.addWidget(self.pl_output)
         card_layout.addLayout(out_row)
 
-        # Key / sequence options
-        opts_label = QLabel(self.translator.get('label_options'))
-        opts_label.setStyleSheet("font-weight: 700; color: #191414; font-size: 12px;")
-        card_layout.addWidget(opts_label)
+        # --- Filters: Direction, BPM, Energy, Groove, Limit ---
+        filter_label = QLabel("Filters:")
+        filter_label.setStyleSheet("font-weight: 700; color: #191414; font-size: 12px;")
+        card_layout.addWidget(filter_label)
 
-        opts_row = QHBoxLayout()
-        opts_row.addWidget(QLabel(self.translator.get('label_camelot_key')))
-        self.pl_key = QComboBox()
-        self.pl_key.addItem("Any")
-        self.pl_key.addItems(sorted(set(CAMELOT_MAP.values())))
-        opts_row.addWidget(self.pl_key)
-        opts_row.addSpacing(20)
-        opts_row.addWidget(QLabel(self.translator.get('label_sequence_start')))
-        self.pl_seq_start = QComboBox()
-        self.pl_seq_start.addItems(sorted(set(CAMELOT_MAP.values())))
-        self.pl_seq_start.setCurrentText("8A")
-        opts_row.addWidget(self.pl_seq_start)
-        opts_row.addWidget(QLabel(self.translator.get('label_direction')))
+        filter_grid = QGridLayout()
+        filter_grid.setSpacing(8)
+        filter_grid.setColumnStretch(1, 1)
+        filter_grid.setColumnStretch(3, 1)
+        filter_grid.setColumnStretch(5, 1)
+
+        # Row 0: Direction, Energy, Groove
+        dir_lbl = QLabel(self.translator.get('label_direction'))
+        dir_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        filter_grid.addWidget(dir_lbl, 0, 0)
         self.pl_direction = QComboBox()
         self.pl_direction.addItems(["forward", "backward", "zigzag"])
-        opts_row.addWidget(self.pl_direction)
-        opts_row.addSpacing(20)
-        opts_row.addWidget(QLabel(self.translator.get('label_transition_end')))
-        self.pl_target_key = QComboBox()
-        self.pl_target_key.addItems(sorted(set(CAMELOT_MAP.values())))
-        self.pl_target_key.setCurrentText("3B")
-        opts_row.addWidget(self.pl_target_key)
-        opts_row.addStretch()
-        card_layout.addLayout(opts_row)
+        self.pl_direction.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_grid.addWidget(self.pl_direction, 0, 1)
 
-        # BPM filters
-        filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel(self.translator.get('label_min_bpm')))
+        energy_lbl = QLabel("Energy:")
+        energy_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        filter_grid.addWidget(energy_lbl, 0, 2)
+        self.pl_energy = QComboBox()
+        self.pl_energy.addItems(["Any", "Low", "Medium", "High"])
+        self.pl_energy.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_grid.addWidget(self.pl_energy, 0, 3)
+
+        groove_lbl = QLabel("Groove:")
+        groove_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        filter_grid.addWidget(groove_lbl, 0, 4)
+        self.pl_groove = QComboBox()
+        self.pl_groove.addItems(["Any", "Driving", "Rolling", "Laid-back", "Swinging", "Syncopated"])
+        self.pl_groove.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_grid.addWidget(self.pl_groove, 0, 5)
+
+        # Row 1: Min BPM, Max BPM, Limit
+        min_bpm_lbl = QLabel(self.translator.get('label_min_bpm'))
+        min_bpm_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        filter_grid.addWidget(min_bpm_lbl, 1, 0)
         self.pl_bpm_min = QSpinBox()
         self.pl_bpm_min.setMinimum(0)
         self.pl_bpm_min.setMaximum(300)
-        filter_row.addWidget(self.pl_bpm_min)
-        filter_row.addWidget(QLabel(self.translator.get('label_max_bpm')))
+        self.pl_bpm_min.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_grid.addWidget(self.pl_bpm_min, 1, 1)
+
+        max_bpm_lbl = QLabel(self.translator.get('label_max_bpm'))
+        max_bpm_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        filter_grid.addWidget(max_bpm_lbl, 1, 2)
         self.pl_bpm_max = QSpinBox()
         self.pl_bpm_max.setMinimum(0)
         self.pl_bpm_max.setMaximum(300)
         self.pl_bpm_max.setValue(300)
-        filter_row.addWidget(self.pl_bpm_max)
-        filter_row.addWidget(QLabel("Limit:"))
+        self.pl_bpm_max.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_grid.addWidget(self.pl_bpm_max, 1, 3)
+
+        limit_lbl = QLabel("Limit:")
+        limit_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        filter_grid.addWidget(limit_lbl, 1, 4)
         self.pl_limit = QSpinBox()
         self.pl_limit.setMinimum(1)
         self.pl_limit.setMaximum(1000)
         self.pl_limit.setValue(50)
-        filter_row.addWidget(self.pl_limit)
-        filter_row.addStretch()
-        card_layout.addLayout(filter_row)
+        self.pl_limit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_grid.addWidget(self.pl_limit, 1, 5)
+
+        card_layout.addLayout(filter_grid)
+
+        # Hidden combos — keep for handle_playlist defaults
+        self.pl_key = QComboBox()
+        self.pl_key.addItem("Any")
+        self.pl_key.addItems(sorted(set(CAMELOT_MAP.values())))
+        self.pl_key.hide()
+        self.pl_seq_start = QComboBox()
+        self.pl_seq_start.addItems(sorted(set(CAMELOT_MAP.values())))
+        self.pl_seq_start.setCurrentText("8A")
+        self.pl_seq_start.hide()
+        self.pl_target_key = QComboBox()
+        self.pl_target_key.addItems(sorted(set(CAMELOT_MAP.values())))
+        self.pl_target_key.setCurrentText("3B")
+        self.pl_target_key.hide()
         card.setLayout(card_layout)
         layout.addWidget(card)
 
@@ -2876,7 +3099,7 @@ class DJAnalyzerGUI(QMainWindow):
         file2_row.addWidget(browse2_btn)
         sec1_layout.addLayout(file2_row)
         sec1_card.setLayout(sec1_layout)
-        layout.addWidget(sec1_card)
+        sec1_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # SECTION 2: Camelot Key Compatibility card
         sec2_card = QFrame()
@@ -2906,9 +3129,16 @@ class DJAnalyzerGUI(QMainWindow):
         key_row.addStretch()
         sec2_layout.addLayout(key_row)
         sec2_card.setLayout(sec2_layout)
-        layout.addWidget(sec2_card)
+        sec2_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Results area
+        # Align both control cards side by side
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(18)
+        controls_row.addWidget(sec1_card, 1)
+        controls_row.addWidget(sec2_card, 1)
+        layout.addLayout(controls_row)
+
+        # Results area — text LEFT, waveforms RIGHT
         res_label = QLabel(self.translator.get('label_results'))
         res_label.setStyleSheet(
             "font-weight: 700; color: #1a3d28; font-size: 12px;"
@@ -2916,6 +3146,10 @@ class DJAnalyzerGUI(QMainWindow):
         )
         layout.addWidget(res_label)
 
+        results_row = QHBoxLayout()
+        results_row.setSpacing(12)
+
+        # Left: text output
         self.compat_output = QTextEdit()
         self.compat_output.setReadOnly(True)
         self.compat_output.setStyleSheet("""
@@ -2930,7 +3164,18 @@ class DJAnalyzerGUI(QMainWindow):
             }
         """)
         self.compat_output.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        layout.addWidget(self.compat_output, 1)
+        results_row.addWidget(self.compat_output, 2)
+
+        # Right: waveforms stacked vertically
+        waveform_col = QVBoxLayout()
+        waveform_col.setSpacing(8)
+        self.compat_waveform1 = WaveformWidget(label="Track 1", color="#1DB954")
+        self.compat_waveform2 = WaveformWidget(label="Track 2", color="#3B82F6")
+        waveform_col.addWidget(self.compat_waveform1, 1)
+        waveform_col.addWidget(self.compat_waveform2, 1)
+        results_row.addLayout(waveform_col, 3)
+
+        layout.addLayout(results_row, 1)
 
         widget.setLayout(layout)
         return widget
@@ -3122,7 +3367,7 @@ class DJAnalyzerGUI(QMainWindow):
         if self._dark:
             desc_label.setStyleSheet("color: #C0C0C0; max-width: 600px; line-height: 1.6;")
         else:
-            desc_label.setStyleSheet("color: #404654; max-width: 600px; line-height: 1.6;")
+            desc_label.setStyleSheet("color: #000000; max-width: 600px; line-height: 1.6;")
         wheel_layout.addWidget(desc_label)
         
         wheel_section.setLayout(wheel_layout)
@@ -3164,7 +3409,7 @@ class DJAnalyzerGUI(QMainWindow):
         if self._dark:
             key_info_label.setStyleSheet("color: #E0E0E0; line-height: 1.8;")
         else:
-            key_info_label.setStyleSheet("color: #191414; line-height: 1.8;")
+            key_info_label.setStyleSheet("color: #000000; line-height: 1.8;")
         info_layout.addWidget(key_info_label)
         
         info_section.setLayout(info_layout)
@@ -3232,7 +3477,7 @@ class DJAnalyzerGUI(QMainWindow):
         if self._dark:
             tips_title_label.setStyleSheet("color: #FFD700; margin-bottom: 10px;")
         else:
-            tips_title_label.setStyleSheet("color: #191414; margin-bottom: 10px;")
+            tips_title_label.setStyleSheet("color: #000000; margin-bottom: 10px;")
         tips_layout.addWidget(tips_title_label)
         
         tips_text_label = QLabel(tips_text)
@@ -3242,7 +3487,7 @@ class DJAnalyzerGUI(QMainWindow):
         if self._dark:
             tips_text_label.setStyleSheet("color: #E0E0E0; line-height: 1.8;")
         else:
-            tips_text_label.setStyleSheet("color: #404654; line-height: 1.8;")
+            tips_text_label.setStyleSheet("color: #000000; line-height: 1.8;")
         tips_layout.addWidget(tips_text_label)
         
         tips_section.setLayout(tips_layout)
@@ -3560,6 +3805,24 @@ Made for DJs and music lovers!
         if hasattr(self, '_progress_dialog') and self._progress_dialog:
             self._progress_dialog.set_complete("Analysis complete!")
 
+        # Load waveforms for both tracks
+        self._load_compat_waveforms()
+
+    def _load_compat_waveforms(self):
+        """Start background waveform loading for both tracks."""
+        f1 = getattr(self, 'compat_file1_path', None)
+        f2 = getattr(self, 'compat_file2_path', None)
+        if f1:
+            self.compat_waveform1.set_label(f"Track 1: {os.path.basename(f1)}")
+            self._wf_worker1 = WaveformWorker(f1)
+            self._wf_worker1.waveform_ready.connect(self.compat_waveform1.set_data)
+            self._wf_worker1.start()
+        if f2:
+            self.compat_waveform2.set_label(f"Track 2: {os.path.basename(f2)}")
+            self._wf_worker2 = WaveformWorker(f2)
+            self._wf_worker2.waveform_ready.connect(self.compat_waveform2.set_data)
+            self._wf_worker2.start()
+
     def _on_transition_error(self, error_msg):
         if hasattr(self, '_progress_dialog') and self._progress_dialog:
             self._progress_dialog.set_error(error_msg)
@@ -3580,42 +3843,22 @@ Made for DJs and music lovers!
             self.analysis_worker.quit()
             self.analysis_worker.wait(2000)
         
-        # Create and show progress dialog
-        self.progress_dialog = QProgressDialog("Analisando arquivo...", "Cancelar", 0, 100, self)
-        self.progress_dialog.setWindowModality(Qt.WindowModal)
-        # Scale dialog width relative to window
-        self.progress_dialog.setMinimumWidth(360)
-        self.progress_dialog.setMaximumWidth(500)
-        self.progress_dialog.setStyleSheet("""
-            QProgressDialog {
-                background: #f8f8f8;
-            }
-            QProgressBar {
-                border: 2px solid #ddd;
-                border-radius: 6px;
-                background: #f0f0f0;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
-                    stop:0 #22C55E, stop:1 #15803D);
-                border-radius: 4px;
-            }
-        """)
+        # Create and show real-time progress dialog
+        dark = getattr(self, '_dark', False)
+        self.progress_dialog = RealTimeProgressDialog(
+            self, title="🎵 Track Analysis", dark=dark, total_files=1
+        )
         
         # Create worker thread
         self.analysis_worker = AnalysisWorker(self.selected_file)
-        self.analysis_worker.progress.connect(self._on_analysis_progress)
+        self.analysis_worker.progress.connect(self.progress_dialog.update_progress)
+        self.analysis_worker.file_tick.connect(self.progress_dialog.update_file)
         self.analysis_worker.result.connect(self._on_analysis_result)
         self.analysis_worker.error.connect(self._on_analysis_error)
         self.analysis_worker.finished.connect(self._on_analysis_finished)
         
+        self.progress_dialog.show()
         self.analysis_worker.start()
-    
-    def _on_analysis_progress(self, value):
-        """Update progress dialog"""
-        if self.progress_dialog:
-            self.progress_dialog.setValue(value)
     
     def _on_analysis_result(self, result):
         """Process analysis result"""
@@ -3706,13 +3949,14 @@ Made for DJs and music lovers!
     def _on_analysis_error(self, error_msg):
         """Handle analysis error"""
         if self.progress_dialog:
-            self.progress_dialog.close()
-        QMessageBox.critical(self, "Erro", f"Erro ao analisar:\n{error_msg}")
+            self.progress_dialog.set_error(error_msg)
+        else:
+            QMessageBox.critical(self, "Erro", f"Erro ao analisar:\n{error_msg}")
     
     def _on_analysis_finished(self):
         """Analysis finished"""
         if self.progress_dialog:
-            self.progress_dialog.close()
+            self.progress_dialog.set_complete("Analysis complete!")
             self.progress_dialog = None
     
     def display_results_side_by_side(self):
@@ -3889,6 +4133,12 @@ Made for DJs and music lovers!
         self._progress_dialog = RealTimeProgressDialog(
             self, title="♫ Building Playlist", dark=dark
         )
+        # Read energy/groove filters
+        energy_sel = self.pl_energy.currentText()
+        energy_filter = None if energy_sel == "Any" else energy_sel
+        groove_sel = self.pl_groove.currentText()
+        groove_filter = None if groove_sel == "Any" else groove_sel
+
         # Prepare arguments based on mode
         if mode == 0:  # Simple Harmonic
             key = self.pl_key.currentText()
@@ -3907,7 +4157,9 @@ Made for DJs and music lovers!
                 output_file=output_file,
                 target_key=key,
                 bpm_range=bpm_range,
-                max_songs=limit
+                max_songs=limit,
+                energy_filter=energy_filter,
+                groove_filter=groove_filter
             )
             self._playlist_mode = 0
             self._playlist_output_file = output_file
@@ -4197,12 +4449,11 @@ Made for DJs and music lovers!
         """Limpa aba de playlist"""
         self.pl_input.clear()
         self.pl_output.setText("minha_playlist.m3u")
-        self.pl_key.setCurrentIndex(0)
-        self.pl_seq_start.setCurrentText("8A")
-        self.pl_target_key.setCurrentText("3B")
         self.pl_direction.setCurrentIndex(0)
         self.pl_bpm_min.setValue(0)
         self.pl_bpm_max.setValue(300)
+        self.pl_energy.setCurrentIndex(0)
+        self.pl_groove.setCurrentIndex(0)
         self.pl_limit.setValue(50)
         self.pl_output_text.clear()
         self.pl_mode_group.button(0).setChecked(True)
