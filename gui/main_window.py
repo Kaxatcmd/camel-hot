@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QTabWidget, QPushButton, QLabel, QLineEdit, QFileDialog, QTextEdit,
     QComboBox, QSpinBox, QCheckBox, QMessageBox, QProgressDialog, QFrame,
     QRadioButton, QButtonGroup, QScrollArea, QSizePolicy, QStackedWidget,
-    QDialog, QProgressBar, QGridLayout
+    QDialog, QProgressBar, QGridLayout, QDesktopWidget
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QRectF, QSettings, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QIcon, QColor, QLinearGradient, QPalette, QPixmap, QPainter, QPainterPath
@@ -53,17 +53,22 @@ class RealTimeProgressDialog(QDialog):
 
     cancelled = pyqtSignal()
 
-    def __init__(self, parent=None, title="Processing...", dark=False):
+    def __init__(self, parent=None, title="Processing...", dark=False, total_files=0):
         super().__init__(parent)
         self._dark = dark
         self._start_time = None
         self._files_processed = 0
-        self._total_files = 0
+        self._total_files = total_files
         self._spinner_idx = 0
         self._is_processing = True
 
         self.setWindowTitle(title)
-        self.setFixedSize(580, 380)
+        # Scale dialog size relative to available screen space
+        screen = QDesktopWidget().availableGeometry(self)
+        dlg_w = max(520, min(680, int(screen.width() * 0.40)))
+        dlg_h = max(340, min(440, int(screen.height() * 0.46)))
+        self.setMinimumSize(480, 320)
+        self.resize(dlg_w, dlg_h)
         self.setModal(True)
         self.setWindowModality(Qt.ApplicationModal)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.CustomizeWindowHint)
@@ -422,7 +427,12 @@ class FolderNamingDialog(QDialog):
         self._accepted_name = None
 
         self.setWindowTitle("Name Your Music Organization")
-        self.setFixedSize(500, 295)
+        # Scale dialog relative to screen
+        screen = QDesktopWidget().availableGeometry(self)
+        dlg_w = max(440, min(560, int(screen.width() * 0.35)))
+        dlg_h = max(260, min(340, int(screen.height() * 0.38)))
+        self.setMinimumSize(400, 240)
+        self.resize(dlg_w, dlg_h)
         self.setModal(True)
         self.setWindowFlags(
             Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint
@@ -1781,10 +1791,16 @@ class DJAnalyzerGUI(QMainWindow):
     def init_ui(self):
         """Inicializa a interface do usuário"""
         self.setWindowTitle(self.translator.get('window_title'))
-        self.setGeometry(100, 100, 900, 650)
-        
-        # Allow window to be resizable
-        self.setMinimumSize(900, 500)
+        # Scale initial geometry to screen – occupy ~80 % of available area
+        screen = QDesktopWidget().availableGeometry(self)
+        win_w = max(860, min(1400, int(screen.width() * 0.80)))
+        win_h = max(560, min(1000, int(screen.height() * 0.80)))
+        x = screen.x() + (screen.width()  - win_w) // 2
+        y = screen.y() + (screen.height() - win_h) // 2
+        self.setGeometry(x, y, win_w, win_h)
+
+        # Allow window to be resizable with a sensible minimum
+        self.setMinimumSize(760, 480)
         self.setWindowFlags(self.windowFlags() | Qt.Window)
         
         # Widget central
@@ -1799,11 +1815,12 @@ class DJAnalyzerGUI(QMainWindow):
         header_layout = QHBoxLayout()
         header_layout.setSpacing(20)
         
-        # Logo container - supports SVG and image formats
+        # Logo container - supports SVG and image formats (size scales with window)
         logo_container = QWidget()
         logo_layout = QVBoxLayout()
         logo_layout.setContentsMargins(0, 0, 0, 0)
-        
+        _logo_sz = max(72, min(110, int(win_w * 0.10)))
+
         assets_dir = get_assets_dir()
         logo_found = False
         
@@ -1813,12 +1830,12 @@ class DJAnalyzerGUI(QMainWindow):
             if logo_path.exists():
                 if logo_name.endswith(".svg"):
                     logo_svg = QSvgWidget(str(logo_path))
-                    logo_svg.setMinimumSize(100, 100)
-                    logo_svg.setMaximumSize(100, 100)
+                    logo_svg.setMinimumSize(_logo_sz, _logo_sz)
+                    logo_svg.setMaximumSize(_logo_sz, _logo_sz)
                     logo_layout.addWidget(logo_svg)
                 else:
                     logo_pixmap = QPixmap(str(logo_path))
-                    logo_pixmap = logo_pixmap.scaledToWidth(100, Qt.SmoothTransformation)
+                    logo_pixmap = logo_pixmap.scaledToWidth(_logo_sz, Qt.SmoothTransformation)
                     logo_label = QLabel()
                     logo_label.setPixmap(logo_pixmap)
                     logo_label.setAlignment(Qt.AlignCenter)
@@ -1829,7 +1846,8 @@ class DJAnalyzerGUI(QMainWindow):
         if not logo_found:
             # Placeholder if no logo found
             placeholder = QLabel("🐪")
-            placeholder_font = QFont("Inter", 48)
+            _ph_pt = max(28, min(48, int(_logo_sz * 0.45)))
+            placeholder_font = QFont("Inter", _ph_pt)
             placeholder.setFont(placeholder_font)
             placeholder.setAlignment(Qt.AlignCenter)
             logo_layout.addWidget(placeholder)
@@ -1850,23 +1868,24 @@ class DJAnalyzerGUI(QMainWindow):
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(2)
         
-        # Main title with gradient effect
+        # Main title with gradient effect — font scales with window width
         title = QLabel("CAMEL-HOT")
-        title_font = QFont("Inter", 42, QFont.Bold)
+        _title_pt = max(24, min(42, int(win_w * 0.043)))
+        title_font = QFont("Inter", _title_pt, QFont.Bold)
         title_font.setLetterSpacing(QFont.PercentageSpacing, 110)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         
         # Split color effect: CAMEL in green, HOT in orange
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 background: transparent;
                 color: #1a4d2e;
                 font-weight: 900;
-                font-size: 42px;
+                font-size: {_title_pt}px;
                 letter-spacing: 3px;
                 text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-            }
+            }}
         """)
         self._header_widgets.append(title)  # Exclude from color remapping
         title_layout.addWidget(title)
@@ -2203,6 +2222,32 @@ class DJAnalyzerGUI(QMainWindow):
         container.setLayout(hl)
         container.stack = stack          # expose for currentChanged signal
         return container
+
+    def closeEvent(self, event):
+        """Gracefully stop all running worker threads before closing."""
+        workers = [
+            getattr(self, 'analysis_worker', None),
+            getattr(self, 'organization_worker', None),
+            getattr(self, 'playlist_worker', None),
+            getattr(self, 'transition_worker', None),
+        ]
+        for w in workers:
+            if w is not None and w.isRunning():
+                try:
+                    if hasattr(w, 'cancel'):
+                        w.cancel()
+                    w.quit()
+                    w.wait(2000)
+                except Exception:
+                    pass
+        # Close any open progress dialog
+        pd = getattr(self, '_progress_dialog', None)
+        if pd is not None:
+            try:
+                pd.close()
+            except Exception:
+                pass
+        event.accept()
 
     def toggle_dark_mode(self, dark: bool):
         """Switch day ↔ night theme and persist the choice."""
@@ -3455,10 +3500,19 @@ Made for DJs and music lovers!
         if not hasattr(self, 'compat_file1_path') or not hasattr(self, 'compat_file2_path'):
             QMessageBox.warning(self, "Aviso", "Selecione ambos os arquivos!")
             return
+        if not self.compat_file1_path or not self.compat_file2_path:
+            QMessageBox.warning(self, "Aviso", "Selecione ambos os arquivos!")
+            return
+
+        # Stop any previously running transition worker
+        existing = getattr(self, 'transition_worker', None)
+        if existing is not None and existing.isRunning():
+            existing.quit()
+            existing.wait(2000)
 
         dark = getattr(self, '_dark', False)
         self._progress_dialog = RealTimeProgressDialog(
-            self, title="⇄ Transition Analysis", total_files=2, dark=dark
+            self, title="⇄ Transition Analysis", dark=dark, total_files=2
         )
         self.transition_worker = TransitionWorker(
             self.compat_file1_path, self.compat_file2_path
@@ -3520,11 +3574,18 @@ Made for DJs and music lovers!
         if not self.selected_file:
             QMessageBox.warning(self, "Aviso", "Selecione um arquivo!")
             return
+
+        # Stop any previously running analysis worker
+        if self.analysis_worker is not None and self.analysis_worker.isRunning():
+            self.analysis_worker.quit()
+            self.analysis_worker.wait(2000)
         
         # Create and show progress dialog
         self.progress_dialog = QProgressDialog("Analisando arquivo...", "Cancelar", 0, 100, self)
         self.progress_dialog.setWindowModality(Qt.WindowModal)
-        self.progress_dialog.setFixedWidth(400)
+        # Scale dialog width relative to window
+        self.progress_dialog.setMinimumWidth(360)
+        self.progress_dialog.setMaximumWidth(500)
         self.progress_dialog.setStyleSheet("""
             QProgressDialog {
                 background: #f8f8f8;
@@ -3722,6 +3783,11 @@ Made for DJs and music lovers!
             QMessageBox.warning(self, "Aviso", "Selecione ambas as pastas!")
             return
 
+        # Stop any previously running organization worker
+        if self.organization_worker is not None and self.organization_worker.isRunning():
+            self.organization_worker.cancel()
+            self.organization_worker.wait(2000)
+
         dark = getattr(self, '_dark', False)
 
         # Ask user for the parent folder name
@@ -3738,11 +3804,14 @@ Made for DJs and music lovers!
         folder_name = dlg.get_folder_name()
 
         # Estimate file count for the progress dialog
-        audio_files = find_audio_files(self.selected_input_folder)
-        total = len(audio_files)
+        try:
+            audio_files = find_audio_files(self.selected_input_folder)
+            total = len(audio_files)
+        except Exception:
+            total = 0
 
         self._progress_dialog = RealTimeProgressDialog(
-            self, title="⊞ Organizing Library", dark=dark
+            self, title="⊞ Organizing Library", dark=dark, total_files=total
         )
         self.organization_worker = OrganizationWorker(
             self.selected_input_folder,
@@ -3802,8 +3871,15 @@ Made for DJs and music lovers!
         if not self.pl_input.text():
             QMessageBox.warning(self, "Aviso", "Selecione uma pasta!")
             return
+
+        # Stop any previously running playlist worker
+        if self.playlist_worker is not None and self.playlist_worker.isRunning():
+            self.playlist_worker.cancel()
+            self.playlist_worker.wait(2000)
         
-        output_file = self.pl_output.text()
+        output_file = self.pl_output.text().strip()
+        if not output_file:
+            output_file = "my_playlist.m3u"
         if not output_file.endswith('.m3u'):
             output_file += '.m3u'
         
@@ -4139,6 +4215,10 @@ def main(language='ENG'):
     Args:
         language (str): Initial language - 'ENG', 'PT', or 'ES' (default: 'ENG')
     """
+    # Enable High-DPI / Retina display scaling before creating QApplication
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     # Ensure Camelot wheel image exists
     try:
         from utils.camelot_wheel_generator import generate_camelot_wheel
