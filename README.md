@@ -30,7 +30,7 @@
 
 ## Screenshots
 
-> *(Add screenshots here — store them in `assets/` and reference them as `![screenshot](assets/screenshot.png)`)*
+![CAMEL-HOT Compatibility Tab](assets/screenshot.png)
 
 ---
 
