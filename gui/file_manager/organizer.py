@@ -209,7 +209,8 @@ def organize_by_key(input_directory, output_directory, move_files=False,
 
 
 def create_playlist(input_directory, output_file, target_key=None,
-                    bpm_range=None, max_songs=20, progress_callback=None):
+                    bpm_range=None, max_songs=20, progress_callback=None,
+                    energy_filter=None, groove_filter=None):
     """
     Create an M3U playlist of harmonically compatible songs.
     
@@ -283,6 +284,18 @@ def create_playlist(input_directory, output_file, target_key=None,
             if bpm_range is not None:
                 min_bpm, max_bpm = bpm_range
                 if track_bpm < min_bpm or track_bpm > max_bpm:
+                    continue
+            
+            # Check energy filter
+            if energy_filter is not None:
+                track_energy = analysis.get('energy', {}).get('level', '')
+                if isinstance(track_energy, str) and track_energy.lower() != energy_filter.lower():
+                    continue
+            
+            # Check groove filter
+            if groove_filter is not None:
+                track_groove = analysis.get('groove', {}).get('type', '')
+                if isinstance(track_groove, str) and track_groove.lower() != groove_filter.lower():
                     continue
             
             # This track passes all filters - add it!
