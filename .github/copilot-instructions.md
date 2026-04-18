@@ -8,7 +8,7 @@ Purpose: give an AI coding agent immediate, actionable context to be productive 
   - `main.py` — app entry point (launches GUI)
   - `gui/main_window.py` — PyQt5 GUI, worker thread pattern (`AnalysisWorker`) and UI wiring
   - `audio_analysis/key_detection.py` — core analysis functions, central: `analyze_track()` and `detect_key_from_audio()`
-  - `file_manager/organizaer.py` — `find_audio_files()`, `organize_by_key()`, `create_playlist()` (M3U generation)
+  - `file_manager/organizer.py` — `find_audio_files()`, `organize_by_key()`, `create_playlist()` (M3U generation)
   - `utils/camelot_map.py` — canonical Camelot mapping (`CAMELOT_MAP`) and compatibility helpers (`is_compatible_keys()`)
 
 - **Run / dev tasks (exact commands):**

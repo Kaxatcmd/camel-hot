@@ -34,6 +34,13 @@ from utils.transition_scoring import calculate_transition_score
 from utils.translations import Translator
 from utils.dj_tips import DJTipsManager
 
+try:
+    import vlc as _vlc
+    VLC_AVAILABLE = True
+except ImportError:
+    _vlc = None
+    VLC_AVAILABLE = False
+
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -878,6 +885,8 @@ class WaveformWidget(QWidget):
         self._sub_points = []
         self._label = label
         self._color = QColor(color)
+        self._play_cursor = None  # float 0.0-1.0 or None
+        self._transition_marker = None  # float 0.0-1.0 or None
         self.setMinimumHeight(100)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -892,6 +901,16 @@ class WaveformWidget(QWidget):
 
     def set_label(self, text):
         self._label = text
+        self.update()
+
+    def set_play_cursor(self, ratio):
+        """Set playback cursor position. ratio is 0.0-1.0 or None to hide."""
+        self._play_cursor = ratio
+        self.update()
+
+    def set_transition_marker(self, ratio):
+        """Set transition marker position. ratio is 0.0-1.0 or None to hide."""
+        self._transition_marker = ratio
         self.update()
 
     def paintEvent(self, event):
@@ -964,6 +983,27 @@ class WaveformWidget(QWidget):
                 mx = int(idx * bar_w + bar_w / 2)
                 painter.setPen(QColor(180, 180, 180))
                 painter.drawText(mx - 3, marker_y + marker_h - 1, "-")
+
+        # Draw playback cursor (vertical line)
+        if self._play_cursor is not None and 0.0 <= self._play_cursor <= 1.0:
+            cx = int(self._play_cursor * w)
+            painter.setPen(QColor(255, 80, 80))
+            painter.setOpacity(0.85)
+            painter.drawLine(cx, wave_top, cx, wave_bottom)
+            painter.setOpacity(1.0)
+
+        # Draw transition marker (vertical dashed orange line)
+        if self._transition_marker is not None and 0.0 <= self._transition_marker <= 1.0:
+            mx = int(self._transition_marker * w)
+            from PyQt5.QtCore import Qt as _Qt
+            orange_pen = painter.pen()
+            orange_pen.setColor(QColor(255, 149, 0))
+            orange_pen.setWidth(2)
+            orange_pen.setStyle(_Qt.DashLine)
+            painter.setPen(orange_pen)
+            painter.setOpacity(0.9)
+            painter.drawLine(mx, wave_top, mx, wave_bottom)
+            painter.setOpacity(1.0)
 
         painter.end()
 
@@ -1136,6 +1176,668 @@ class ThemeToggleSwitch(QWidget):
         painter.setPen(QColor("#dde8f4" if self._dark else "#5a4000"))
         painter.drawText(QRectF(cx, mg, cd, cd), Qt.AlignCenter, icon)
         painter.end()
+
+
+class ShowoffEngine:
+    """
+    Pure-logic engine that calculates the optimal transition between two tracks.
+    No UI — returns a ShowoffPlan dict for the caller to display and execute.
+    """
+
+    # Crossfade duration (seconds) based on harmonic compatibility score
+    _CROSSFADE_MAP = [
+        (0.80, 20),
+        (0.50, 40),
+        (0.00, 60),
+    ]
+
+    @staticmethod
+    def build_plan(track1, track2, transition_score,
+                   key_points1, key_points2,
+                   n_bars, duration1, duration2):
+        """
+        Calculate the ShowoffPlan.
+
+        Parameters
+        ----------
+        track1, track2      : analyze_track() result dicts
+        transition_score    : calculate_transition_score() result dict
+        key_points1/2       : list of bar indices from WaveformWidget
+        n_bars              : total number of waveform bars (int)
+        duration1, duration2: track durations in seconds (float)
+
+        Returns
+        -------
+        dict with keys:
+          exit_ratio    float  0.0-1.0  position in track1 where crossfade starts
+          entry_ratio   float  0.0-1.0  position in track2 where track2 enters
+          bpm_target    float  averaged BPM
+          bpm1_rate     float  VLC playback rate for track1
+          bpm2_rate     float  VLC playback rate for track2
+          crossfade_sec int    duration of crossfade in seconds
+          score         float  overall compatibility score
+          camelot1      str
+          camelot2      str
+          notes         list[str]
+        """
+        overall = transition_score.get('overall_score', 0.5)
+
+        # 1. BPM sync
+        try:
+            bpm1 = float(str(track1.get('bpm', 120)).split()[0])
+        except Exception:
+            bpm1 = 120.0
+        try:
+            bpm2 = float(str(track2.get('bpm', 120)).split()[0])
+        except Exception:
+            bpm2 = 120.0
+        bpm_target = (bpm1 + bpm2) / 2.0
+        bpm1_rate  = bpm_target / bpm1 if bpm1 > 0 else 1.0
+        bpm2_rate  = bpm_target / bpm2 if bpm2 > 0 else 1.0
+        # Clamp rates to reasonable range
+        bpm1_rate = max(0.80, min(1.25, bpm1_rate))
+        bpm2_rate = max(0.80, min(1.25, bpm2_rate))
+
+        # 2. Crossfade duration from score
+        crossfade_sec = 24
+        for threshold, secs in ShowoffEngine._CROSSFADE_MAP:
+            if overall >= threshold:
+                crossfade_sec = secs
+                break
+
+        # 3. Exit point in Track 1
+        #    Last key_point whose bar index maps to before (duration1 - crossfade_sec)
+        exit_ratio = 0.75  # safe default
+        if duration1 and duration1 > 0:
+            cutoff_ratio = max(0.0, (duration1 - crossfade_sec) / duration1)
+            cutoff_bar   = int(cutoff_ratio * n_bars)
+            candidates   = [b for b in key_points1 if b <= cutoff_bar]
+            if candidates:
+                exit_bar   = max(candidates)
+                exit_ratio = exit_bar / max(n_bars - 1, 1)
+            elif key_points1:
+                exit_ratio = max(key_points1) / max(n_bars - 1, 1)
+
+        # 4. Entry point in Track 2 — first key_point
+        entry_ratio = 0.0  # default: start from beginning
+        if key_points2:
+            entry_bar   = min(key_points2)
+            entry_ratio = entry_bar / max(n_bars - 1, 1)
+
+        return {
+            'exit_ratio':    exit_ratio,
+            'entry_ratio':   entry_ratio,
+            'bpm_target':    round(bpm_target, 1),
+            'bpm1_rate':     round(bpm1_rate, 4),
+            'bpm2_rate':     round(bpm2_rate, 4),
+            'crossfade_sec': crossfade_sec,
+            'score':         overall,
+            'camelot1':      track1.get('camelot', '\u2014'),
+            'camelot2':      track2.get('camelot', '\u2014'),
+            'bpm1':          round(bpm1, 1),
+            'bpm2':          round(bpm2, 1),
+            'notes':         transition_score.get('notes', []),
+        }
+
+
+class ShowoffConfirmDialog(QDialog):
+    """
+    Modal dialog showing the Showoff! transition plan.
+    User sees exit/entry points and BPM sync info before confirming.
+    """
+
+    def __init__(self, plan, dark=False, parent=None):
+        super().__init__(parent)
+        self._plan = plan
+        self._dark = dark
+        self.setWindowTitle("\U0001f42b Showoff! \u2014 Transition Plan")
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
+        screen = QDesktopWidget().availableGeometry(self)
+        self.resize(max(420, int(screen.width() * 0.30)),
+                    max(300, int(screen.height() * 0.38)))
+        self._build_ui()
+        self._apply_theme()
+        if parent:
+            pr = parent.geometry()
+            self.move(pr.center().x() - self.width() // 2,
+                      pr.center().y() - self.height() // 2)
+
+    def _build_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("\U0001f42b  Showoff! \u2014 Transition Plan")
+        title.setFont(QFont("Inter", 13, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName("scd_sep")
+        layout.addWidget(sep)
+
+        p = self._plan
+        info = (
+            f"  BPM Sync Target : {p['bpm_target']} BPM\n"
+            f"  Track 1 BPM     : {p['bpm1']}  \u2192  rate \u00d7{p['bpm1_rate']}\n"
+            f"  Track 2 BPM     : {p['bpm2']}  \u2192  rate \u00d7{p['bpm2_rate']}\n\n"
+            f"  Camelot Keys    : {p['camelot1']}  \u2192  {p['camelot2']}\n"
+            f"  Compatibility   : {p['score']:.0%}\n\n"
+            f"  Exit point      : {p['exit_ratio']:.1%} into Track 1\n"
+            f"  Entry point     : {p['entry_ratio']:.1%} into Track 2\n"
+            f"  Crossfade       : {p['crossfade_sec']} seconds\n"
+        )
+        info_lbl = QLabel(info)
+        info_lbl.setFont(QFont("Courier New", 10))
+        info_lbl.setObjectName("scd_info")
+        info_lbl.setWordWrap(True)
+        layout.addWidget(info_lbl)
+
+        if p['notes']:
+            notes_lbl = QLabel("\U0001f4a1 " + "\n\U0001f4a1 ".join(p['notes'][:3]))
+            notes_lbl.setObjectName("scd_notes")
+            notes_lbl.setWordWrap(True)
+            notes_lbl.setFont(QFont("Inter", 9))
+            layout.addWidget(notes_lbl)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("\u2715  Cancel")
+        cancel_btn.setObjectName("scd_cancel")
+        cancel_btn.setMinimumWidth(90)
+        cancel_btn.setMinimumHeight(34)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("\U0001f42b  Let's Go!")
+        confirm_btn.setObjectName("scd_confirm")
+        confirm_btn.setMinimumWidth(120)
+        confirm_btn.setMinimumHeight(34)
+        confirm_btn.setDefault(True)
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+        layout.addLayout(btn_row)
+
+        self.setLayout(layout)
+
+    def _apply_theme(self):
+        dark = self._dark
+        bg      = "#222222" if dark else "#f8f8f8"
+        text_c  = "#E8E8E8" if dark else "#222222"
+        sub_c   = "#909090" if dark else "#555555"
+        sep_c   = "#3a3a3a" if dark else "#e8d841"
+        mono_c  = "#d0e8d0" if dark else "#1a3d28"
+        can_bg  = "#3a3a3a" if dark else "#e0e0e0"
+        can_fg  = "#E0E0E0" if dark else "#333333"
+        can_bdr = "#555555" if dark else "#bbbbbb"
+        self.setStyleSheet(f"""
+            QDialog   {{ background: {bg}; }}
+            QLabel    {{ color: {text_c}; background: transparent; }}
+            QLabel#scd_info  {{ color: {mono_c}; }}
+            QLabel#scd_notes {{ color: {sub_c}; }}
+            QFrame#scd_sep   {{ background: {sep_c}; max-height: 2px; border: none; }}
+            QPushButton#scd_cancel {{
+                background: {can_bg}; color: {can_fg};
+                border: 1px solid {can_bdr}; border-radius: 8px;
+                padding: 6px 16px; font-weight: 600; font-size: 11px;
+            }}
+            QPushButton#scd_cancel:hover {{
+                background: {'#4a4a4a' if dark else '#d0d0d0'};
+            }}
+            QPushButton#scd_confirm {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 #F59E0B, stop:1 #D97706);
+                color: white; border: none; border-radius: 8px;
+                padding: 6px 16px; font-weight: 700; font-size: 11px;
+            }}
+            QPushButton#scd_confirm:hover {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 #FBBF24, stop:1 #F59E0B);
+            }}
+        """)
+
+
+class AudioPlayerBar(QWidget):
+    """
+    Compact horizontal player bar for the compatibility tab.
+    Controls playback of Track 1 and Track 2 via python-vlc.
+    Emits position_changed(track_idx, ratio) for waveform cursor updates.
+    """
+    position_changed = pyqtSignal(int, float)  # track index (0 or 1), position ratio 0.0-1.0
+
+    def __init__(self, dark=False, parent=None):
+        super().__init__(parent)
+        self._dark = dark
+        self._players = [None, None]       # vlc.MediaPlayer for track 0 and track 1
+        self._file_paths = [None, None]
+        self._playing = [False, False]
+        self._durations = [0, 0]
+        self._showoff_enabled = False
+        self._showoff_callback = None
+
+        self._build_ui()
+        self._apply_theme()
+
+        # Timer to emit position for waveform cursor
+        self._pos_timer = QTimer(self)
+        self._pos_timer.setInterval(100)
+        self._pos_timer.timeout.connect(self._tick_position)
+        self._pos_timer.start()
+
+    def _build_ui(self):
+        layout = QHBoxLayout()
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(6)
+
+        # ── Track 1 controls ──────────────────────────
+        self.btn_seek1_back = QPushButton("\u23ea")
+        self.btn_seek1_back.setFixedSize(32, 32)
+        self.btn_seek1_back.setToolTip("Back 10s \u2014 Track 1")
+        self.btn_seek1_back.clicked.connect(lambda: self._seek(0, -10))
+        self.btn_seek1_back.setEnabled(False)
+        layout.addWidget(self.btn_seek1_back)
+
+        self.btn_play1 = QPushButton("\u25b6  Track 1")
+        self.btn_play1.setFixedHeight(32)
+        self.btn_play1.setMinimumWidth(110)
+        self.btn_play1.setCheckable(False)
+        self.btn_play1.clicked.connect(lambda: self._toggle_play(0))
+        self.btn_play1.setEnabled(False)
+        layout.addWidget(self.btn_play1)
+
+        self.btn_seek1_fwd = QPushButton("\u23e9")
+        self.btn_seek1_fwd.setFixedSize(32, 32)
+        self.btn_seek1_fwd.setToolTip("Forward 10s \u2014 Track 1")
+        self.btn_seek1_fwd.clicked.connect(lambda: self._seek(0, +10))
+        self.btn_seek1_fwd.setEnabled(False)
+        layout.addWidget(self.btn_seek1_fwd)
+
+        layout.addSpacing(8)
+
+        # ── Track 2 controls ──────────────────────────
+        self.btn_seek2_back = QPushButton("\u23ea")
+        self.btn_seek2_back.setFixedSize(32, 32)
+        self.btn_seek2_back.setToolTip("Back 10s \u2014 Track 2")
+        self.btn_seek2_back.clicked.connect(lambda: self._seek(1, -10))
+        self.btn_seek2_back.setEnabled(False)
+        layout.addWidget(self.btn_seek2_back)
+
+        self.btn_play2 = QPushButton("\u25b6  Track 2")
+        self.btn_play2.setFixedHeight(32)
+        self.btn_play2.setMinimumWidth(110)
+        self.btn_play2.setCheckable(False)
+        self.btn_play2.clicked.connect(lambda: self._toggle_play(1))
+        self.btn_play2.setEnabled(False)
+        layout.addWidget(self.btn_play2)
+
+        self.btn_seek2_fwd = QPushButton("\u23e9")
+        self.btn_seek2_fwd.setFixedSize(32, 32)
+        self.btn_seek2_fwd.setToolTip("Forward 10s \u2014 Track 2")
+        self.btn_seek2_fwd.clicked.connect(lambda: self._seek(1, +10))
+        self.btn_seek2_fwd.setEnabled(False)
+        layout.addWidget(self.btn_seek2_fwd)
+
+        # Stop all button
+        self.btn_stop = QPushButton("\u25a0  Stop")
+        self.btn_stop.setFixedHeight(32)
+        self.btn_stop.setMinimumWidth(80)
+        self.btn_stop.clicked.connect(self.stop_all)
+        self.btn_stop.setEnabled(False)
+        layout.addWidget(self.btn_stop)
+
+        # Status label
+        self.status_lbl = QLabel("No track loaded")
+        self.status_lbl.setObjectName("apb_status")
+        self.status_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self.status_lbl)
+
+        # Showoff button \u2014 disabled until transition analysis is complete
+        self.btn_showoff = QPushButton("\U0001f42b  Showoff!")
+        self.btn_showoff.setFixedHeight(32)
+        self.btn_showoff.setMinimumWidth(120)
+        self.btn_showoff.setEnabled(False)
+        self.btn_showoff.clicked.connect(self._on_showoff_clicked)
+        layout.addWidget(self.btn_showoff)
+
+        self.setLayout(layout)
+        self.setFixedHeight(52)
+
+        if not VLC_AVAILABLE:
+            for btn in (self.btn_play1, self.btn_play2, self.btn_stop, self.btn_showoff):
+                btn.setEnabled(False)
+                btn.setToolTip("python-vlc not installed \u2014 run: pip install python-vlc")
+            self.status_lbl.setText("\u26a0 python-vlc not installed")
+
+    # \u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    def load_tracks(self, file1, file2):
+        """Call after transition analysis to load both tracks into VLC."""
+        self._file_paths = [file1, file2]
+        self.stop_all()
+        if not VLC_AVAILABLE:
+            return
+        for i, path in enumerate([file1, file2]):
+            if path:
+                try:
+                    instance = _vlc.Instance('--no-xlib', '--quiet')
+                    player = instance.media_player_new()
+                    media = instance.media_new(path)
+                    player.set_media(media)
+                    self._players[i] = player
+                    self._playing[i] = False
+                except Exception:
+                    self._players[i] = None
+        self.btn_play1.setEnabled(self._players[0] is not None)
+        self.btn_seek1_back.setEnabled(self._players[0] is not None)
+        self.btn_seek1_fwd.setEnabled(self._players[0] is not None)
+        self.btn_play2.setEnabled(self._players[1] is not None)
+        self.btn_seek2_back.setEnabled(self._players[1] is not None)
+        self.btn_seek2_fwd.setEnabled(self._players[1] is not None)
+        self.btn_stop.setEnabled(True)
+        self.status_lbl.setText("Ready \u2014 press \u25b6 to play")
+
+    def enable_showoff(self, callback):
+        """
+        Enable the Showoff! button after transition analysis.
+        callback: callable that will be called when user confirms showoff.
+        """
+        self._showoff_enabled = True
+        self._showoff_callback = callback
+        self.btn_showoff.setEnabled(VLC_AVAILABLE)
+
+    def stop_all(self):
+        """Stop both tracks."""
+        for i in range(2):
+            if self._players[i] is not None:
+                try:
+                    self._players[i].stop()
+                except Exception:
+                    pass
+            self._playing[i] = False
+        self.btn_play1.setText("\u25b6  Track 1")
+        self.btn_play2.setText("\u25b6  Track 2")
+        self.status_lbl.setText("Stopped")
+
+    def apply_dark(self, dark: bool):
+        self._dark = dark
+        self._apply_theme()
+
+    # \u2500\u2500 Internal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    def _toggle_play(self, track_idx):
+        """Toggle play/pause for the given track index (0 or 1)."""
+        if not VLC_AVAILABLE:
+            return
+        player = self._players[track_idx]
+        if player is None:
+            return
+        other_idx = 1 - track_idx
+        # Pause the other track if playing
+        if self._playing[other_idx]:
+            try:
+                self._players[other_idx].pause()
+            except Exception:
+                pass
+            self._playing[other_idx] = False
+            other_btn = self.btn_play2 if other_idx == 1 else self.btn_play1
+            other_btn.setText(f"\u25b6  Track {other_idx + 1}")
+
+        if self._playing[track_idx]:
+            # Currently playing \u2192 pause
+            try:
+                player.pause()
+            except Exception:
+                pass
+            self._playing[track_idx] = False
+            btn = self.btn_play1 if track_idx == 0 else self.btn_play2
+            btn.setText(f"\u25b6  Track {track_idx + 1}")
+            self.status_lbl.setText(f"Paused \u2014 Track {track_idx + 1}")
+        else:
+            # Not playing \u2192 play
+            try:
+                state = player.get_state()
+                if state in (_vlc.State.Ended, _vlc.State.Stopped, _vlc.State.NothingSpecial):
+                    player.stop()
+                    media = player.get_media()
+                    player.set_media(media)
+            except Exception:
+                pass
+            try:
+                player.play()
+            except Exception:
+                return
+            self._playing[track_idx] = True
+            btn = self.btn_play1 if track_idx == 0 else self.btn_play2
+            btn.setText(f"\u23f8  Track {track_idx + 1}")
+            self.status_lbl.setText(f"Playing \u2014 Track {track_idx + 1}")
+
+    def _tick_position(self):
+        """Emit position_changed for each playing track to update waveform cursor."""
+        if not VLC_AVAILABLE:
+            return
+        for i in range(2):
+            if self._playing[i] and self._players[i] is not None:
+                try:
+                    ratio = self._players[i].get_position()
+                    if ratio is not None and 0.0 <= ratio <= 1.0:
+                        self.position_changed.emit(i, ratio)
+                    state = self._players[i].get_state()
+                    if state == _vlc.State.Ended:
+                        self._playing[i] = False
+                        btn = self.btn_play1 if i == 0 else self.btn_play2
+                        btn.setText(f"\u25b6  Track {i + 1}")
+                        self.status_lbl.setText("Playback ended")
+                except Exception:
+                    pass
+
+    def _seek(self, track_idx, delta_sec):
+        """Seek track_idx by delta_sec seconds (positive = forward, negative = back)."""
+        if not VLC_AVAILABLE:
+            return
+        player = self._players[track_idx]
+        if player is None:
+            return
+        try:
+            current_ms = player.get_time()
+            length_ms  = player.get_length()
+            if current_ms < 0:
+                current_ms = 0
+            new_ms = current_ms + int(delta_sec * 1000)
+            new_ms = max(0, new_ms)
+            if length_ms > 0:
+                new_ms = min(new_ms, length_ms - 1000)
+            player.set_time(new_ms)
+        except Exception:
+            pass
+
+    def _on_showoff_clicked(self):
+        """Called when user clicks Showoff! \u2014 invoke the registered callback."""
+        if self._showoff_callback is not None:
+            self.stop_all()
+            self._showoff_callback()
+
+    def execute_showoff(self, plan):
+        """
+        Execute the Showoff! transition.
+
+        Flow:
+          1. Track 1 starts, seeks to exit_ratio after 600ms buffer.
+          2. Track 2 is queued at entry_ratio after another 800ms.
+          3. Crossfade runs over crossfade_sec: T1 fades out, T2 fades in.
+          4. T1 stops; T2 continues at full volume.
+        """
+        if not VLC_AVAILABLE:
+            return
+        p0 = self._players[0]
+        p1 = self._players[1]
+        if p0 is None or p1 is None:
+            self.status_lbl.setText("\u26a0 Load both tracks first")
+            return
+
+        self._cf_plan    = plan
+        self._cf_player0 = p0
+        self._cf_player1 = p1
+        self._cf_step    = 0
+        self._cf_steps   = 40
+        if getattr(self, '_cf_timer', None) is not None:
+            try:
+                self._cf_timer.stop()
+            except Exception:
+                pass
+            self._cf_timer = None
+
+        try:
+            # Phase 1 \u2014 Stop both cleanly and apply BPM rate
+            self.stop_all()
+            p0.set_rate(float(plan['bpm1_rate']))
+            p1.set_rate(float(plan['bpm2_rate']))
+
+            # Phase 2 \u2014 Start Track 1 and seek to exit_ratio after buffer
+            p0.audio_set_volume(100)
+            p0.play()
+            self._playing[0] = True
+            self.btn_play1.setText("\u23f8  Track 1")
+            self.status_lbl.setText("\U0001f42b Showoff! \u2014 Track 1 loading\u2026")
+            QTimer.singleShot(600, self._showoff_seek_track1)
+
+        except Exception as e:
+            self.status_lbl.setText(f"Showoff error: {e}")
+
+    def _showoff_seek_track1(self):
+        """Phase 2b \u2014 Seek Track 1 to exit point after VLC buffer delay."""
+        try:
+            p0 = self._cf_player0
+            exit_ratio = float(self._cf_plan['exit_ratio'])
+            p0.set_position(exit_ratio)
+            self.status_lbl.setText(
+                f"\U0001f42b Showoff! \u2014 Track 1 at exit point "
+                f"({exit_ratio:.0%}) \u2014 queuing Track 2\u2026"
+            )
+        except Exception as e:
+            self.status_lbl.setText(f"Seek error: {e}")
+            return
+        # Phase 3 \u2014 Start Track 2 at entry_ratio after another buffer delay
+        QTimer.singleShot(400, self._showoff_start_track2)
+
+    def _showoff_start_track2(self):
+        """Phase 3 \u2014 Start Track 2 at entry_ratio with volume 0, begin crossfade."""
+        try:
+            p1 = self._cf_player1
+            entry_ratio = float(self._cf_plan['entry_ratio'])
+            p1.audio_set_volume(0)
+            p1.play()
+            self._playing[1] = True
+            self.btn_play2.setText("\u23f8  Track 2")
+            self.status_lbl.setText("\U0001f42b Showoff! \u2014 Track 2 loading\u2026")
+            QTimer.singleShot(600, self._showoff_seek_track2)
+        except Exception as e:
+            self.status_lbl.setText(f"Track 2 start error: {e}")
+
+    def _showoff_seek_track2(self):
+        """Phase 3b \u2014 Seek Track 2 to entry point, then start crossfade timer."""
+        try:
+            p1 = self._cf_player1
+            entry_ratio = float(self._cf_plan['entry_ratio'])
+            p1.set_position(entry_ratio)
+            self.status_lbl.setText("\U0001f42b Showoff! \u2014 Crossfading\u2026")
+        except Exception as e:
+            self.status_lbl.setText(f"Seek error: {e}")
+            return
+        # Phase 4 \u2014 Start crossfade timer
+        crossfade_ms = max(1000, self._cf_plan['crossfade_sec'] * 1000)
+        interval_ms  = max(50, crossfade_ms // self._cf_steps)
+        self._cf_timer = QTimer(self)
+        self._cf_timer.setInterval(interval_ms)
+        self._cf_timer.timeout.connect(self._crossfade_step)
+        self._cf_timer.start()
+
+    def _crossfade_step(self):
+        """
+        Advance one crossfade volume step.
+        Track 1: 100 \u2192 0
+        Track 2: 0   \u2192 100
+        When complete: stop Track 1, Track 2 continues.
+        """
+        self._cf_step += 1
+        import math
+        ratio = self._cf_step / self._cf_steps
+        # Equal-power curve: avoids the perceived silence dip at midpoint.
+        # At ratio=0.5: vol0 ≈ 71, vol1 ≈ 71 (instead of 50+50).
+        vol0  = max(0, min(100, int(100 * math.cos(ratio * math.pi / 2))))
+        vol1  = max(0, min(100, int(100 * math.sin(ratio * math.pi / 2))))
+        try:
+            self._cf_player0.audio_set_volume(vol0)
+            self._cf_player1.audio_set_volume(vol1)
+        except Exception:
+            pass
+        if self._cf_step >= self._cf_steps:
+            # Crossfade complete
+            self._cf_timer.stop()
+            self._cf_timer = None
+            try:
+                self._cf_player0.stop()
+                self._cf_player0.audio_set_volume(100)  # restore for next use
+            except Exception:
+                pass
+            self._playing[0] = False
+            self.btn_play1.setText("\u25b6  Track 1")
+            self.status_lbl.setText(
+                "\U0001f42b Showoff! complete \u2014 Track 2 playing"
+            )
+
+    def _apply_theme(self):
+        dark = self._dark
+        bg      = "#2a2a2a" if dark else "#f0f0f0"
+        bdr     = "#3a3a3a" if dark else "#dddddd"
+        text_c  = "#d0d0d0" if dark else "#444444"
+        play_c1 = "#3B82F6"
+        play_c2 = "#1D4ED8"
+        stop_c1 = "#6b7280"
+        stop_c2 = "#4b5563"
+        show_c1 = "#F59E0B"
+        show_c2 = "#D97706"
+        self.setStyleSheet(f"""
+            AudioPlayerBar {{
+                background: {bg};
+                border: 1px solid {bdr};
+                border-radius: 8px;
+            }}
+            QWidget {{
+                background: {bg};
+            }}
+            QLabel#apb_status {{
+                color: {text_c};
+                font-size: 11px;
+                font-weight: 600;
+                background: transparent;
+            }}
+            QPushButton {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 {play_c1}, stop:1 {play_c2});
+                color: white; border: none; border-radius: 7px;
+                padding: 4px 12px; font-weight: 700; font-size: 11px;
+            }}
+            QPushButton:hover {{
+                border: 1px solid rgba(255,255,255,0.4);
+            }}
+            QPushButton:disabled {{
+                background: {'#3a3a3a' if dark else '#cccccc'};
+                color: {'#666' if dark else '#999'};
+            }}
+            QPushButton[text="\u25a0  Stop"] {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 {stop_c1}, stop:1 {stop_c2});
+            }}
+            QPushButton[text^="\U0001f42b"] {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 {show_c1}, stop:1 {show_c2});
+                color: white;
+            }}
+        """)
 
 
 class DJAnalyzerGUI(QMainWindow):
@@ -2415,6 +3117,12 @@ class DJAnalyzerGUI(QMainWindow):
 
     def closeEvent(self, event):
         """Gracefully stop all running worker threads before closing."""
+        # Stop audio player before closing
+        if hasattr(self, 'audio_player_bar'):
+            try:
+                self.audio_player_bar.stop_all()
+            except Exception:
+                pass
         workers = [
             getattr(self, 'analysis_worker', None),
             getattr(self, 'organization_worker', None),
@@ -2445,6 +3153,8 @@ class DJAnalyzerGUI(QMainWindow):
         self.apply_theme(dark)
         self._collect_styled_refs()
         self._refresh_content_styles()
+        if hasattr(self, 'audio_player_bar'):
+            self.audio_player_bar.apply_dark(dark)
         QSettings("CamelHot", "DJAnalyzer").setValue("darkMode", dark)
 
     def _collect_styled_refs(self):
@@ -3146,6 +3856,10 @@ class DJAnalyzerGUI(QMainWindow):
         )
         layout.addWidget(res_label)
 
+        # Audio player bar — play/pause controls + Showoff! button
+        self.audio_player_bar = AudioPlayerBar(dark=self._dark, parent=widget)
+        layout.addWidget(self.audio_player_bar)
+
         results_row = QHBoxLayout()
         results_row.setSpacing(12)
 
@@ -3775,6 +4489,12 @@ Made for DJs and music lovers!
         track1 = data['track1']
         track2 = data['track2']
         transition = data['transition']
+
+        # Store for ShowoffEngine
+        self._transition_track1 = track1
+        self._transition_track2 = track2
+        self._transition_score  = transition
+
         output = "🎛️ TRANSITION COMPARISON\n"
         output += "═" * 70 + "\n\n"
         output += f"Track 1: {os.path.basename(self.compat_file1_path)}\n"
@@ -3808,6 +4528,13 @@ Made for DJs and music lovers!
         # Load waveforms for both tracks
         self._load_compat_waveforms()
 
+        # Load tracks into audio player bar
+        f1 = getattr(self, 'compat_file1_path', None)
+        f2 = getattr(self, 'compat_file2_path', None)
+        if hasattr(self, 'audio_player_bar') and f1 and f2:
+            self.audio_player_bar.load_tracks(f1, f2)
+            self.audio_player_bar.enable_showoff(self._launch_showoff)
+
     def _load_compat_waveforms(self):
         """Start background waveform loading for both tracks."""
         f1 = getattr(self, 'compat_file1_path', None)
@@ -3823,6 +4550,19 @@ Made for DJs and music lovers!
             self._wf_worker2.waveform_ready.connect(self.compat_waveform2.set_data)
             self._wf_worker2.start()
 
+        # Connect player position to waveform cursors
+        if hasattr(self, 'audio_player_bar'):
+            try:
+                self.audio_player_bar.position_changed.disconnect()
+            except Exception:
+                pass
+            def _update_cursor(track_idx, ratio):
+                if track_idx == 0:
+                    self.compat_waveform1.set_play_cursor(ratio)
+                else:
+                    self.compat_waveform2.set_play_cursor(ratio)
+            self.audio_player_bar.position_changed.connect(_update_cursor)
+
     def _on_transition_error(self, error_msg):
         if hasattr(self, '_progress_dialog') and self._progress_dialog:
             self._progress_dialog.set_error(error_msg)
@@ -3831,7 +4571,61 @@ Made for DJs and music lovers!
 
     def _on_transition_finished(self):
         pass
-    
+
+    def _launch_showoff(self):
+        """
+        Called when user clicks Showoff! button.
+        Builds the ShowoffPlan, shows the confirmation dialog,
+        marks transition points on waveforms, then executes crossfade.
+        """
+        track1     = getattr(self, '_transition_track1', None)
+        track2     = getattr(self, '_transition_track2', None)
+        score      = getattr(self, '_transition_score',  None)
+        if track1 is None or track2 is None or score is None:
+            QMessageBox.warning(self, "Showoff!", "Run a Transition Comparison first.")
+            return
+
+        wf1 = self.compat_waveform1
+        wf2 = self.compat_waveform2
+        n_bars = max(len(wf1._bars), 1)
+
+        try:
+            dur1 = float(str(track1.get('duration', 0)).split()[0])
+        except Exception:
+            dur1 = 0.0
+        try:
+            dur2 = float(str(track2.get('duration', 0)).split()[0])
+        except Exception:
+            dur2 = 0.0
+
+        plan = ShowoffEngine.build_plan(
+            track1        = track1,
+            track2        = track2,
+            transition_score = score,
+            key_points1   = list(wf1._key_points),
+            key_points2   = list(wf2._key_points),
+            n_bars        = n_bars,
+            duration1     = dur1,
+            duration2     = dur2,
+        )
+
+        # Show confirmation dialog
+        dark = getattr(self, '_dark', False)
+        dlg  = ShowoffConfirmDialog(plan=plan, dark=dark, parent=self)
+
+        # Preview: mark transition points on waveforms immediately
+        wf1.set_transition_marker(plan['exit_ratio'])
+        wf2.set_transition_marker(plan['entry_ratio'])
+
+        if dlg.exec_() == QDialog.Accepted:
+            # Execute the crossfade
+            if hasattr(self, 'audio_player_bar'):
+                self.audio_player_bar.execute_showoff(plan)
+        else:
+            # User cancelled — clear markers
+            wf1.set_transition_marker(None)
+            wf2.set_transition_marker(None)
+
     def handle_analyze(self):
         """Analisa um arquivo com progresso"""
         if not self.selected_file:

@@ -602,10 +602,19 @@ def find_camelot_wheel_distance(key1, key2):
         letter1 = key1[-1]
         letter2 = key2[-1]
         
-        # If different letters (A vs B), they're at same number position
-        if letter1 != letter2:
+        # Same key
+        if num1 == num2 and letter1 == letter2:
             return 0
-        
+
+        # Relative key (same number, different letter)
+        if num1 == num2 and letter1 != letter2:
+            return 0.5
+
+        # Different number, different letter
+        if num1 != num2 and letter1 != letter2:
+            circ = abs(num1 - num2)
+            return float(min(circ, 12 - circ))
+
         # Same letter - calculate steps around the wheel
         distance = abs(num1 - num2)
         # Account for wheel wrap-around

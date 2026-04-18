@@ -24,7 +24,12 @@ try:
     LIBROSA_AVAILABLE = True
 except ImportError:
     LIBROSA_AVAILABLE = False
-    print("Tip: Install librosa for audio analysis with 'pip install librosa'")
+
+import logging
+logger = logging.getLogger(__name__)
+
+if not LIBROSA_AVAILABLE:
+    logger.info("Tip: Install librosa for audio analysis with 'pip install librosa'")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,7 +124,22 @@ def _note_to_frequency(note_name):
     """
     # This uses the formula: frequency = 440 * 2^((n-69)/12)
     # where n is the MIDI note number for that note
-    pass  # Implementation would go here
+    NOTE_TO_MIDI_BASE = {
+        "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3,
+        "E": 4, "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8,
+        "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11,
+    }
+    try:
+        # Separate note letters from octave digit(s)
+        i = 0
+        while i < len(note_name) and not note_name[i].isdigit() and note_name[i] != '-':
+            i += 1
+        note = note_name[:i]
+        octave = int(note_name[i:])
+        midi_note = NOTE_TO_MIDI_BASE[note] + (octave + 1) * 12
+        return 440.0 * (2 ** ((midi_note - 69) / 12))
+    except (KeyError, ValueError, IndexError):
+        return None
 
 
 def _find_strongest_pitch(y, sr):
@@ -165,7 +185,7 @@ def _find_strongest_pitch(y, sr):
         return strongest_pitch if strongest_pitch > 0 else None
     
     except Exception as e:
-        print(f"Erro ao detectar pitch: {e}")
+        logger.error(f"Erro ao detectar pitch: {e}")
         return None
 
 
@@ -186,9 +206,6 @@ def _frequency_to_note(frequency):
     
     # Formula in reverse: n = 12 * log2(frequency/440) + 69
     # This gives us the MIDI note number
-    midi_note = 12 * (frequency / 440.0).bit_length() + 69
-    # Wait, that's not right. Let me fix it...
-    
     # Correct formula:
     # MIDI note number = 69 + 12 * log2(frequency / 440)
     import math
@@ -256,7 +273,7 @@ def detect_key_from_audio(file_path):
         }
 
     except Exception as e:
-        print(f"Erro ao detectar tonalidade: {e}")
+        logger.error(f"Erro ao detectar tonalidade: {e}")
         return {
             "key": f"Erro ao detectar: {str(e)}",
             "camelot": "Unknown",
@@ -311,7 +328,7 @@ def detect_key_segments(y, sr, segment_duration=30):
 
         return segments
     except Exception as e:
-        print(f"Error in segment key detection: {e}")
+        logger.error(f"Error in segment key detection: {e}")
         return []
 
 
@@ -385,7 +402,7 @@ def detect_key_modulations(y, sr, segment_duration=30):
             "segments": segments,
         }
     except Exception as e:
-        print(f"Error detecting modulations: {e}")
+        logger.error(f"Error detecting modulations: {e}")
         return {
             "primary_key": "Unknown",
             "primary_camelot": "Unknown",
@@ -509,40 +526,11 @@ def detect_bpm_advanced(file_path):
         }
 
     except Exception as e:
-        print(f"Erro ao detectar BPM: {e}")
+        logger.error(f"Erro ao detectar BPM: {e}")
         return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
                 "half_time_bpm": None, "double_time_bpm": None}
 
 
-def analyze_track(file_path):
-    """
-    Complete analysis of a track - key, BPM, energy, groove, and mood.
-    
-    This gives you all the important musical information about
-    a song in one call, including advanced features for smart transitions.
-    
-    Args:
-        file_path: Path to the audio file
-    
-    Returns:
-        Dictionary with:
-        - file_path: Where the file is
-        - key: Musical key name
-        - camelot: Camelot notation
-        - bpm: Beats per minute
-        - duration: How long the track is (seconds)
-        - confidence: Key detection confidence (0-1)
-        - energy: Energy level classification (if librosa available)
-        - groove: Groove type and characteristics (if librosa available)
-        - mood: Mood classification and scores (if librosa available)
-    
-    Example:
-        >>> info = analyze_track("my_song.mp3")
-        >>> print(f"This song is in {info['camelot']} at {info['bpm']} BPM")
-        >>> print(f"Mood: {info['mood']['primary_mood']}, Energy: {info['energy']['level']}")
-        This song is in 8A at 120 BPM
-        Mood: Euphoric, Energy: High
-    """
 def analyze_track(file_path):
     """
     Complete analysis of a track - key, BPM, energy, groove, mood, and modulations.
@@ -573,33 +561,33 @@ def analyze_track(file_path):
         y, sr = librosa.load(file_path, duration=60)
         duration = librosa.get_duration(y=y, sr=sr)
 
-        print(f"🎵 Analisando: {file_path}")
-        print(f"   ⏱️  Duração: {duration:.2f}s")
+        logger.info(f"🎵 Analisando: {file_path}")
+        logger.info(f"   ⏱️  Duração: {duration:.2f}s")
 
         # ── Key detection (Krumhansl-Schmuckler) ──────────────────────────────
-        print(f"   🔍 Detectando tonalidade (Krumhansl-Schmuckler)...")
+        logger.info(f"   🔍 Detectando tonalidade (Krumhansl-Schmuckler)...")
         key_info = detect_key_from_audio(file_path)
 
         # ── Modulation analysis ───────────────────────────────────────────────
-        print(f"   🔄 Analisando modulações...")
+        logger.info(f"   🔄 Analisando modulações...")
         modulation_info = detect_key_modulations(y, sr, segment_duration=30)
 
         # ── BPM (advanced) ────────────────────────────────────────────────────
-        print(f"   ⏱️  Detectando BPM (avançado)...")
+        logger.info(f"   ⏱️  Detectando BPM (avançado)...")
         bpm_info = detect_bpm_advanced(file_path)
 
         # ── Energy ────────────────────────────────────────────────────────────
-        print(f"   ⚡ Detectando nível de energia...")
+        logger.info(f"   ⚡ Detectando nível de energia...")
         from audio_analysis.energy_detection import classify_energy_level
         energy = classify_energy_level(y, sr)
 
         # ── Groove ────────────────────────────────────────────────────────────
-        print(f"   🥁 Analisando groove...")
+        logger.info(f"   🥁 Analisando groove...")
         from audio_analysis.groove_analysis import classify_groove_type
         groove = classify_groove_type(y, sr)
 
         # ── Mood ──────────────────────────────────────────────────────────────
-        print(f"   😊 Classificando humor...")
+        logger.info(f"   😊 Classificando humor...")
         from audio_analysis.mood_classification import classify_mood
         mood = classify_mood(y, sr)
 
@@ -628,26 +616,26 @@ def analyze_track(file_path):
             "mood": mood,
         }
 
-        print(f"   ✅ Análise completa!")
-        print(f"      • Tonalidade: {result['key']} (conf={result['confidence']:.2f})")
-        print(f"      • Camelot: {result['camelot']}")
-        print(f"      • BPM: {result['bpm']} (var={result['bpm_variability']:.1f}%)")
-        print(f"      • Estabilidade tonal: {result['key_stability']:.0%}")
+        logger.info(f"   ✅ Análise completa!")
+        logger.info(f"      • Tonalidade: {result['key']} (conf={result['confidence']:.2f})")
+        logger.info(f"      • Camelot: {result['camelot']}")
+        logger.info(f"      • BPM: {result['bpm']} (var={result['bpm_variability']:.1f}%)")
+        logger.info(f"      • Estabilidade tonal: {result['key_stability']:.0%}")
         if modulation_info.get("modulations"):
-            print(f"      • Modulações detectadas: {len(modulation_info['modulations'])}")
+            logger.info(f"      • Modulações detectadas: {len(modulation_info['modulations'])}")
         if energy:
-            print(f"      • Energia: {energy.get('level', 'Unknown')} "
+            logger.info(f"      • Energia: {energy.get('level', 'Unknown')} "
                   f"({energy.get('numeric_score', '?')}/10)")
         if groove:
-            print(f"      • Groove: {groove.get('type', 'Unknown')} "
+            logger.info(f"      • Groove: {groove.get('type', 'Unknown')} "
                   f"/ Família: {groove.get('groove_family', '?')}")
         if mood:
-            print(f"      • Humor: {mood.get('primary_mood', 'Unknown')}")
+            logger.info(f"      • Humor: {mood.get('primary_mood', 'Unknown')}")
 
         return result
 
     except Exception as e:
-        print(f"❌ Erro ao analisar {file_path}: {e}")
+        logger.error(f"❌ Erro ao analisar {file_path}: {e}")
         import traceback
         traceback.print_exc()
         return {
