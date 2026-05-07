@@ -28,8 +28,9 @@ MANIFEST
 *.swo
 Thumbs.db
 
-# Logs (keep the logs/ directory but ignore log files)
+# Logs — ignore log files; keep directory structure via .gitkeep
 logs/*.log
+logs/**/*.log
 *.log
 
 # User-generated runtime output (not part of the source repo)
