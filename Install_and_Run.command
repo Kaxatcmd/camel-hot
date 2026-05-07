@@ -1,6 +1,6 @@
 #!/bin/bash
-# DJ Harmonic Analyzer — Installer & Launcher (Linux)
-# Abre o instalador gráfico PyQt5.
+# DJ Harmonic Analyzer — Installer & Launcher (macOS)
+# Double-click this file in Finder to open the graphical installer.
 
 cd "$(dirname "$0")"
 
@@ -24,7 +24,11 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo " [ERRO] Python 3.8+ não encontrado."
-    echo " Instala com: sudo apt install python3  (ou equivalente)"
+    echo ""
+    echo " Por favor instala Python em: https://www.python.org/downloads/"
+    echo ""
+    osascript -e 'display alert "Python não encontrado" message "Instala Python 3.8+ em python.org antes de continuar." as critical'
+    open "https://www.python.org/downloads/"
     exit 1
 fi
 
@@ -38,7 +42,7 @@ if [ $? -ne 0 ]; then
     "$PYTHON" -m pip install "PyQt5>=5.15.0" --quiet
     if [ $? -ne 0 ]; then
         echo " [ERRO] Falha ao instalar PyQt5."
-        echo " Tenta: pip install PyQt5  ou  sudo apt install python3-pyqt5"
+        osascript -e 'display alert "Erro de instalação" message "Falha ao instalar PyQt5. Verifica a tua ligação à internet." as critical'
         exit 1
     fi
 fi
