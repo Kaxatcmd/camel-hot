@@ -33,9 +33,11 @@ logs/*.log
 logs/**/*.log
 *.log
 
-# User-generated runtime output (not part of the source repo)
-input_audio/
-output_audio/
+# User-generated runtime output — ignore content, preserve directory via .gitkeep
+input_audio/*
+!input_audio/.gitkeep
+output_audio/*
+!output_audio/.gitkeep
 *.m3u
 
 # Coverage & test artefacts
