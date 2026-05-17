@@ -1437,7 +1437,8 @@ class AudioPlayerBar(QWidget):
         self.btn_seek1_back = QPushButton("\u23ea")
         self.btn_seek1_back.setFixedSize(32, 32)
         self.btn_seek1_back.setToolTip("Back 10s \u2014 Track 1")
-        self.btn_seek1_back.clicked.connect(lambda: self._seek(0, -10))
+        self.btn_seek1_back.clicked.connect(
+            lambda: self._seek(0, -QSettings("CamelHot", "DJAnalyzer").value("seek_step", 10, type=int)))
         self.btn_seek1_back.setEnabled(False)
         layout.addWidget(self.btn_seek1_back)
 
@@ -1452,7 +1453,8 @@ class AudioPlayerBar(QWidget):
         self.btn_seek1_fwd = QPushButton("\u23e9")
         self.btn_seek1_fwd.setFixedSize(32, 32)
         self.btn_seek1_fwd.setToolTip("Forward 10s \u2014 Track 1")
-        self.btn_seek1_fwd.clicked.connect(lambda: self._seek(0, +10))
+        self.btn_seek1_fwd.clicked.connect(
+            lambda: self._seek(0, +QSettings("CamelHot", "DJAnalyzer").value("seek_step", 10, type=int)))
         self.btn_seek1_fwd.setEnabled(False)
         layout.addWidget(self.btn_seek1_fwd)
 
@@ -1462,7 +1464,8 @@ class AudioPlayerBar(QWidget):
         self.btn_seek2_back = QPushButton("\u23ea")
         self.btn_seek2_back.setFixedSize(32, 32)
         self.btn_seek2_back.setToolTip("Back 10s \u2014 Track 2")
-        self.btn_seek2_back.clicked.connect(lambda: self._seek(1, -10))
+        self.btn_seek2_back.clicked.connect(
+            lambda: self._seek(1, -QSettings("CamelHot", "DJAnalyzer").value("seek_step", 10, type=int)))
         self.btn_seek2_back.setEnabled(False)
         layout.addWidget(self.btn_seek2_back)
 
@@ -1477,7 +1480,8 @@ class AudioPlayerBar(QWidget):
         self.btn_seek2_fwd = QPushButton("\u23e9")
         self.btn_seek2_fwd.setFixedSize(32, 32)
         self.btn_seek2_fwd.setToolTip("Forward 10s \u2014 Track 2")
-        self.btn_seek2_fwd.clicked.connect(lambda: self._seek(1, +10))
+        self.btn_seek2_fwd.clicked.connect(
+            lambda: self._seek(1, +QSettings("CamelHot", "DJAnalyzer").value("seek_step", 10, type=int)))
         self.btn_seek2_fwd.setEnabled(False)
         layout.addWidget(self.btn_seek2_fwd)
 
@@ -1702,7 +1706,7 @@ class AudioPlayerBar(QWidget):
             self._playing[0] = True
             self.btn_play1.setText("\u23f8  Track 1")
             self.status_lbl.setText("\U0001f42b Showoff! \u2014 Track 1 loading\u2026")
-            QTimer.singleShot(600, self._showoff_seek_track1)
+            QTimer.singleShot(QSettings("CamelHot", "DJAnalyzer").value("vlc_buffer_delay", 600, type=int), self._showoff_seek_track1)
 
         except Exception as e:
             self.status_lbl.setText(f"Showoff error: {e}")
@@ -1721,7 +1725,7 @@ class AudioPlayerBar(QWidget):
             self.status_lbl.setText(f"Seek error: {e}")
             return
         # Phase 3 \u2014 Start Track 2 at entry_ratio after another buffer delay
-        QTimer.singleShot(400, self._showoff_start_track2)
+        QTimer.singleShot(QSettings("CamelHot", "DJAnalyzer").value("vlc_track_delay", 400, type=int), self._showoff_start_track2)
 
     def _showoff_start_track2(self):
         """Phase 3 \u2014 Start Track 2 at entry_ratio with volume 0, begin crossfade."""
@@ -1733,7 +1737,7 @@ class AudioPlayerBar(QWidget):
             self._playing[1] = True
             self.btn_play2.setText("\u23f8  Track 2")
             self.status_lbl.setText("\U0001f42b Showoff! \u2014 Track 2 loading\u2026")
-            QTimer.singleShot(600, self._showoff_seek_track2)
+            QTimer.singleShot(QSettings("CamelHot", "DJAnalyzer").value("vlc_buffer_delay", 600, type=int), self._showoff_seek_track2)
         except Exception as e:
             self.status_lbl.setText(f"Track 2 start error: {e}")
 
@@ -1840,9 +1844,329 @@ class AudioPlayerBar(QWidget):
         """)
 
 
+class SettingsDialog(QDialog):
+    """Application settings dialog — language, default folders, audio player, interface."""
+
+    def __init__(self, dark=False, parent=None):
+        super().__init__(parent)
+        self._dark = dark
+        self._s = QSettings("CamelHot", "DJAnalyzer")
+
+        self.setWindowTitle("⚙ Settings")
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
+        screen = QDesktopWidget().availableGeometry(self)
+        self.resize(max(440, int(screen.width() * 0.32)),
+                    max(520, int(screen.height() * 0.60)))
+        self._build_ui()
+        self._load_settings()
+        self._apply_theme()
+        if parent:
+            pr = parent.geometry()
+            self.move(pr.center().x() - self.width() // 2,
+                      pr.center().y() - self.height() // 2)
+
+    def _section_label(self, text):
+        lbl = QLabel(text)
+        lbl.setFont(QFont("Inter", 10, QFont.Bold))
+        lbl.setObjectName("sd_section")
+        return lbl
+
+    def _divider(self):
+        f = QFrame()
+        f.setFrameShape(QFrame.HLine)
+        f.setObjectName("sd_sep")
+        return f
+
+    def _build_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(8)
+
+        title = QLabel("⚙  Settings")
+        title.setFont(QFont("Inter", 13, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        title.setObjectName("sd_title")
+        layout.addWidget(title)
+        layout.addWidget(self._divider())
+
+        # ── 🌍 Language ──────────────────────────────────────────────────
+        layout.addWidget(self._section_label("🌍  Language / Idioma"))
+        lang_row = QHBoxLayout()
+        lang_lbl = QLabel("Language:")
+        lang_lbl.setObjectName("sd_label")
+        lang_lbl.setMinimumWidth(110)
+        lang_row.addWidget(lang_lbl)
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(['English (ENG)', 'Português (PT)', 'Español (ES)'])
+        lang_row.addWidget(self.lang_combo)
+        layout.addLayout(lang_row)
+
+        layout.addSpacing(4)
+        layout.addWidget(self._divider())
+
+        # ── 📁 Default Folders ───────────────────────────────────────────
+        layout.addWidget(self._section_label("📁  Default Folders / Pastas Padrão"))
+
+        music_row = QHBoxLayout()
+        music_lbl = QLabel("Music folder:")
+        music_lbl.setObjectName("sd_label")
+        music_lbl.setMinimumWidth(110)
+        music_row.addWidget(music_lbl)
+        self.music_folder_input = QLineEdit()
+        self.music_folder_input.setReadOnly(True)
+        self.music_folder_input.setPlaceholderText("(none)")
+        music_row.addWidget(self.music_folder_input)
+        music_browse_btn = QPushButton("Browse")
+        music_browse_btn.setObjectName("sd_browse_btn")
+        music_browse_btn.setMaximumWidth(80)
+        music_browse_btn.clicked.connect(self._browse_music_folder)
+        music_row.addWidget(music_browse_btn)
+        layout.addLayout(music_row)
+
+        output_row = QHBoxLayout()
+        output_lbl = QLabel("Output folder:")
+        output_lbl.setObjectName("sd_label")
+        output_lbl.setMinimumWidth(110)
+        output_row.addWidget(output_lbl)
+        self.output_folder_input = QLineEdit()
+        self.output_folder_input.setReadOnly(True)
+        self.output_folder_input.setPlaceholderText("(none)")
+        output_row.addWidget(self.output_folder_input)
+        output_browse_btn = QPushButton("Browse")
+        output_browse_btn.setObjectName("sd_browse_btn")
+        output_browse_btn.setMaximumWidth(80)
+        output_browse_btn.clicked.connect(self._browse_output_folder)
+        output_row.addWidget(output_browse_btn)
+        layout.addLayout(output_row)
+
+        layout.addSpacing(4)
+        layout.addWidget(self._divider())
+
+        # ── 🎛️ Audio Player ─────────────────────────────────────────────
+        layout.addWidget(self._section_label("🎛️  Audio Player"))
+
+        audio_grid = QGridLayout()
+        audio_grid.setColumnStretch(1, 1)
+        audio_grid.setHorizontalSpacing(12)
+        audio_grid.setVerticalSpacing(8)
+
+        vlc_buf_lbl = QLabel("VLC buffer delay:")
+        vlc_buf_lbl.setObjectName("sd_label")
+        audio_grid.addWidget(vlc_buf_lbl, 0, 0)
+        self.vlc_buffer_spin = QSpinBox()
+        self.vlc_buffer_spin.setRange(100, 2000)
+        self.vlc_buffer_spin.setSuffix(" ms")
+        audio_grid.addWidget(self.vlc_buffer_spin, 0, 1)
+
+        vlc_track_lbl = QLabel("Track delay:")
+        vlc_track_lbl.setObjectName("sd_label")
+        audio_grid.addWidget(vlc_track_lbl, 1, 0)
+        self.vlc_track_spin = QSpinBox()
+        self.vlc_track_spin.setRange(100, 2000)
+        self.vlc_track_spin.setSuffix(" ms")
+        audio_grid.addWidget(self.vlc_track_spin, 1, 1)
+
+        seek_lbl = QLabel("Seek step:")
+        seek_lbl.setObjectName("sd_label")
+        audio_grid.addWidget(seek_lbl, 2, 0)
+        self.seek_step_spin = QSpinBox()
+        self.seek_step_spin.setRange(5, 60)
+        self.seek_step_spin.setSuffix(" s")
+        audio_grid.addWidget(self.seek_step_spin, 2, 1)
+
+        layout.addLayout(audio_grid)
+
+        layout.addSpacing(4)
+        layout.addWidget(self._divider())
+
+        # ── 🔔 Interface ─────────────────────────────────────────────────
+        layout.addWidget(self._section_label("🔔  Interface"))
+
+        self.confirm_move_cb = QCheckBox("Confirm before moving files")
+        self.confirm_move_cb.setObjectName("sd_checkbox")
+        layout.addWidget(self.confirm_move_cb)
+
+        self.show_tips_cb = QCheckBox("Show DJ tips on startup")
+        self.show_tips_cb.setObjectName("sd_checkbox")
+        layout.addWidget(self.show_tips_cb)
+
+        layout.addStretch()
+
+        # ── Buttons ──────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("sd_cancel_btn")
+        cancel_btn.setMinimumWidth(90)
+        cancel_btn.setMinimumHeight(34)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        ok_btn = QPushButton("OK")
+        ok_btn.setObjectName("sd_ok_btn")
+        ok_btn.setMinimumWidth(90)
+        ok_btn.setMinimumHeight(34)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self._on_ok)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+        self.setLayout(layout)
+
+    def _load_settings(self):
+        s = self._s
+        lang = s.value("language", "ENG", type=str)
+        self.lang_combo.setCurrentIndex({"ENG": 0, "PT": 1, "ES": 2}.get(lang, 0))
+        self.music_folder_input.setText(s.value("default_music_folder", "", type=str))
+        self.output_folder_input.setText(s.value("default_output_folder", "", type=str))
+        self.vlc_buffer_spin.setValue(s.value("vlc_buffer_delay", 600, type=int))
+        self.vlc_track_spin.setValue(s.value("vlc_track_delay", 400, type=int))
+        self.seek_step_spin.setValue(s.value("seek_step", 10, type=int))
+        self.confirm_move_cb.setChecked(s.value("confirm_move", True, type=bool))
+        self.show_tips_cb.setChecked(s.value("show_tips", True, type=bool))
+
+    def _browse_music_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select music folder")
+        if folder:
+            self.music_folder_input.setText(folder)
+
+    def _browse_output_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select output folder")
+        if folder:
+            self.output_folder_input.setText(folder)
+
+    def _on_ok(self):
+        s = self._s
+        lang_idx = self.lang_combo.currentIndex()
+        s.setValue("language", ["ENG", "PT", "ES"][lang_idx])
+        s.setValue("default_music_folder", self.music_folder_input.text())
+        s.setValue("default_output_folder", self.output_folder_input.text())
+        s.setValue("vlc_buffer_delay", self.vlc_buffer_spin.value())
+        s.setValue("vlc_track_delay", self.vlc_track_spin.value())
+        s.setValue("seek_step", self.seek_step_spin.value())
+        s.setValue("confirm_move", self.confirm_move_cb.isChecked())
+        s.setValue("show_tips", self.show_tips_cb.isChecked())
+        self.accept()
+
+    def _apply_theme(self):
+        dark = self._dark
+        bg        = "#222222" if dark else "#f8f8f8"
+        text_c    = "#E8E8E8" if dark else "#222222"
+        sub_c     = "#909090" if dark else "#555555"
+        sep_c     = "#3a3a3a" if dark else "#e8d841"
+        input_bg  = "#2a2a2a" if dark else "white"
+        input_fg  = "#E8E8E8" if dark else "#191414"
+        input_bdr = "#555555" if dark else "#cccccc"
+        cb_bg     = "#3a3a3a" if dark else "#e0e0e0"
+        cb_fg     = "#E0E0E0" if dark else "#333333"
+        cb_bdr    = "#555555" if dark else "#bbbbbb"
+        self.setStyleSheet(f"""
+            QDialog {{ background: {bg}; }}
+            QLabel {{ color: {text_c}; background: transparent; }}
+            QLabel#sd_section {{
+                color: {'#e8d841' if dark else '#1DB954'};
+                font-size: 11px;
+                font-weight: 700;
+                padding: 4px 0px 2px 0px;
+            }}
+            QLabel#sd_label {{ color: {sub_c}; font-size: 10px; }}
+            QFrame#sd_sep {{
+                background: {sep_c};
+                max-height: 1px;
+                border: none;
+                margin: 2px 0px;
+            }}
+            QComboBox {{
+                background: {input_bg};
+                color: {input_fg};
+                border: 1px solid {input_bdr};
+                border-radius: 5px;
+                padding: 5px 8px;
+                font-size: 10px;
+            }}
+            QComboBox::drop-down {{ border: none; }}
+            QComboBox QAbstractItemView {{
+                background: {input_bg};
+                color: {input_fg};
+                border: 1px solid {input_bdr};
+            }}
+            QLineEdit {{
+                background: {input_bg};
+                color: {input_fg};
+                border: 1px solid {input_bdr};
+                border-radius: 5px;
+                padding: 5px 8px;
+                font-size: 10px;
+            }}
+            QSpinBox {{
+                background: {input_bg};
+                color: {input_fg};
+                border: 1px solid {input_bdr};
+                border-radius: 5px;
+                padding: 4px 8px;
+                font-size: 10px;
+            }}
+            QCheckBox {{
+                color: {text_c};
+                font-size: 11px;
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 2px solid {input_bdr};
+                border-radius: 3px;
+                background: {input_bg};
+            }}
+            QCheckBox::indicator:checked {{
+                background: #1DB954;
+                border-color: #1DB954;
+            }}
+            QPushButton#sd_browse_btn {{
+                background: {cb_bg};
+                color: {cb_fg};
+                border: 1px solid {cb_bdr};
+                border-radius: 5px;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: 600;
+            }}
+            QPushButton#sd_browse_btn:hover {{
+                border: 1px solid #ff9500;
+                color: #ff9500;
+            }}
+            QPushButton#sd_cancel_btn {{
+                background: {cb_bg};
+                color: {cb_fg};
+                border: 1px solid {cb_bdr};
+                border-radius: 8px;
+                padding: 6px 16px;
+                font-weight: 600;
+                font-size: 11px;
+            }}
+            QPushButton#sd_cancel_btn:hover {{
+                background: {'#4a4a4a' if dark else '#d0d0d0'};
+            }}
+            QPushButton#sd_ok_btn {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 #F59E0B, stop:1 #D97706);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 6px 16px;
+                font-weight: 700;
+                font-size: 11px;
+            }}
+            QPushButton#sd_ok_btn:hover {{
+                background: qlineargradient(spread:pad, x1:0 y1:0, x2:0 y2:1,
+                    stop:0 #FBBF24, stop:1 #F59E0B);
+            }}
+        """)
+
+
 class DJAnalyzerGUI(QMainWindow):
     """Classe principal da interface gráfica com PyQt5 - CAMEL-HOT Theme"""
-    
+
     def __init__(self, language='ENG'):
         super().__init__()
         self.translator = Translator(language)
@@ -1851,6 +2175,13 @@ class DJAnalyzerGUI(QMainWindow):
         self.selected_input_folder = None
         self.selected_output_folder = None
         self.analysis_results = []
+        self._saved_tab_index        = 0
+        self._saved_file             = None
+        self._saved_input_folder     = None
+        self._saved_output_folder    = None
+        self._saved_analysis_results = []
+        self._saved_compat_file1     = None
+        self._saved_compat_file2     = None
         self._dark: bool = False
         self._cards: list = []
         self._outputs: list = []
@@ -2837,15 +3168,11 @@ class DJAnalyzerGUI(QMainWindow):
         toggle_row.addWidget(self._theme_toggle)
         right_vbox.addLayout(toggle_row)
 
-        # Language Selector Button
-        lang_selector = QComboBox()
-        lang_selector.addItems(['English (ENG)', 'Português (PT)', 'Español (ES)'])
-        lang_selector.setMaximumWidth(160)
-        lang_selector.setCurrentIndex(0 if self.translator.get_current_language() == 'ENG' else
-                                      1 if self.translator.get_current_language() == 'PT' else 2)
-        lang_selector.currentIndexChanged.connect(self.change_language)
-        lang_selector.setStyleSheet("""
-            QComboBox {
+        # Settings button (replaces lang_selector)
+        settings_btn = QPushButton("⚙ Settings")
+        settings_btn.setMaximumWidth(160)
+        settings_btn.setStyleSheet("""
+            QPushButton {
                 background: white;
                 color: #191414;
                 border: 2px solid #e8d841;
@@ -2854,11 +3181,13 @@ class DJAnalyzerGUI(QMainWindow):
                 font-size: 10px;
                 font-weight: 600;
             }
-            QComboBox:hover {
+            QPushButton:hover {
                 border: 2px solid #ff9500;
+                background: #fffef0;
             }
         """)
-        right_vbox.addWidget(lang_selector)
+        settings_btn.clicked.connect(self._open_settings)
+        right_vbox.addWidget(settings_btn)
         right_controls.setLayout(right_vbox)
         header_layout.addWidget(right_controls)
 
@@ -2990,6 +3319,7 @@ class DJAnalyzerGUI(QMainWindow):
         central_widget.setLayout(main_layout)
         self._collect_styled_refs()
         self._refresh_content_styles()  # Always refresh to ensure proper colors
+        self._apply_default_folders()
 
     def _create_tab_corner_widget(self):
         """Context-sensitive compact action buttons shown in the tab bar top-right corner."""
@@ -3344,18 +3674,96 @@ class DJAnalyzerGUI(QMainWindow):
                     w.setStyleSheet(new_ss)
 
     def change_language(self, index):
-        """Change application language and reload UI"""
+        """Change application language and reload UI preserving state"""
         languages = ['ENG', 'PT', 'ES']
         new_language = languages[index]
         if self.translator.get_current_language() != new_language:
+            self._save_ui_state()
             self.translator.set_language(new_language)
             self.tips_manager.set_language(new_language)
-            # Reload the entire UI
             central_widget = self.centralWidget()
             if central_widget is not None:
                 central_widget.deleteLater()
             self.init_ui()
-    
+            self._restore_ui_state()
+
+    def _save_ui_state(self):
+        if hasattr(self, 'audio_player_bar'):
+            self.audio_player_bar.stop_all()
+        if hasattr(self, 'tabs'):
+            self._saved_tab_index = self.tabs.currentIndex()
+        self._saved_file             = self.selected_file
+        self._saved_input_folder     = self.selected_input_folder
+        self._saved_output_folder    = self.selected_output_folder
+        self._saved_analysis_results = list(self.analysis_results)
+        self._saved_compat_file1     = getattr(self, 'compat_file1_path', None)
+        self._saved_compat_file2     = getattr(self, 'compat_file2_path', None)
+
+    def _restore_ui_state(self):
+        if self._saved_file:
+            self.selected_file = self._saved_file
+            if hasattr(self, 'analyze_file_input'):
+                self.analyze_file_input.setText(self._saved_file)
+
+        if self._saved_input_folder:
+            self.selected_input_folder = self._saved_input_folder
+            if hasattr(self, 'org_input'):
+                self.org_input.setText(self._saved_input_folder)
+
+        if self._saved_output_folder:
+            self.selected_output_folder = self._saved_output_folder
+            if hasattr(self, 'org_output'):
+                self.org_output.setText(self._saved_output_folder)
+
+        if self._saved_analysis_results:
+            self.analysis_results = self._saved_analysis_results
+            self.display_results_side_by_side()
+
+        if hasattr(self, 'tabs'):
+            self.tabs.setCurrentIndex(self._saved_tab_index)
+
+        if self._saved_compat_file1:
+            self.compat_file1_path = self._saved_compat_file1
+            if hasattr(self, 'compat_file1'):
+                self.compat_file1.setText(self._saved_compat_file1)
+
+        if self._saved_compat_file2:
+            self.compat_file2_path = self._saved_compat_file2
+            if hasattr(self, 'compat_file2'):
+                self.compat_file2.setText(self._saved_compat_file2)
+
+        if self._saved_compat_file1 and self._saved_compat_file2:
+            if hasattr(self, 'audio_player_bar'):
+                self.audio_player_bar.load_tracks(
+                    self._saved_compat_file1,
+                    self._saved_compat_file2
+                )
+
+        self._saved_tab_index        = 0
+        self._saved_file             = None
+        self._saved_input_folder     = None
+        self._saved_output_folder    = None
+        self._saved_analysis_results = []
+        self._saved_compat_file1     = None
+        self._saved_compat_file2     = None
+
+    def _open_settings(self):
+        dlg = SettingsDialog(dark=self._dark, parent=self)
+        if dlg.exec_() == QDialog.Accepted:
+            lang_idx = dlg.lang_combo.currentIndex()
+            self.change_language(lang_idx)
+
+    def _apply_default_folders(self):
+        s = QSettings("CamelHot", "DJAnalyzer")
+        music_folder = s.value("default_music_folder", "", type=str)
+        output_folder = s.value("default_output_folder", "", type=str)
+        if music_folder and hasattr(self, 'org_input'):
+            self.selected_input_folder = music_folder
+            self.org_input.setText(music_folder)
+        if output_folder and hasattr(self, 'org_output'):
+            self.selected_output_folder = output_folder
+            self.org_output.setText(output_folder)
+
     def create_analyze_tab(self):
         """Cria aba para analisar música individual"""
         widget = TropicalBackground()
@@ -5275,7 +5683,8 @@ def main(language='ENG'):
         pass  # If wheel generation fails, the UI will fall back to ASCII
     
     app = QApplication(sys.argv)
-    window = DJAnalyzerGUI(language=language)
+    saved_lang = QSettings("CamelHot", "DJAnalyzer").value("language", language, type=str)
+    window = DJAnalyzerGUI(language=saved_lang)
     window.show()
     sys.exit(app.exec_())
 
