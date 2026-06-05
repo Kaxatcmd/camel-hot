@@ -14,6 +14,9 @@ matplotlib>=3.5.0  # For generating the Camelot wheel visualization
 # - audioread
 # And other supporting libraries
 
+# Audio format support — ships its own static ffmpeg binary (MP3, AAC, etc.)
+imageio-ffmpeg>=0.5.0
+
 # Audio playback (required for player bar and Showoff! transition engine)
 python-vlc>=3.0.0    # VLC-based audio player for compatibility tab
 

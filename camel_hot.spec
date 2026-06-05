@@ -20,6 +20,12 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 # soundfile: gets _soundfile.pyd + libsndfile64bit.dll (Windows) or .so (Linux/macOS)
 _sf_datas, _sf_binaries, _sf_hiddenimports = collect_all('soundfile')
 
+# imageio-ffmpeg: ships a static ffmpeg binary — needed for MP3/AAC/m4a decoding
+try:
+    _iff_datas, _iff_binaries, _iff_hiddenimports = collect_all('imageio_ffmpeg')
+except Exception:
+    _iff_datas, _iff_binaries, _iff_hiddenimports = [], [], []
+
 # librosa: bundled filter/data files (mel filterbanks, etc.)
 try:
     _lr_datas = collect_data_files('librosa', include_py_files=False)
@@ -104,7 +110,7 @@ added_datas = [
     ("audio_analysis/", "audio_analysis"),
     ("config.py", "."),
     ("logging_config.py", "."),
-] + _sf_datas + _lr_datas
+] + _sf_datas + _lr_datas + _iff_datas
 
 # Linux: include .desktop and 512-px icon for system integration
 if sys.platform.startswith("linux"):
@@ -164,6 +170,8 @@ hidden_imports = [
     "audioread.gstreamer",
     "audioread.ffdec",
     "audioread.maddec",
+    "audioread.win_wma",   # Windows Media Foundation backend (MP3 on Windows)
+    "imageio_ffmpeg",
     # matplotlib
     "matplotlib",
     "matplotlib.backends.backend_qt5agg",
@@ -171,7 +179,7 @@ hidden_imports = [
     # PyQt5 extras used by the app
     "PyQt5.QtSvg",
     "PyQt5.QtPrintSupport",
-] + _sf_hiddenimports
+] + _sf_hiddenimports + _iff_hiddenimports
 
 # ---------------------------------------------------------------------------
 # Modules to exclude (reduces bundle size — only safe exclusions)
@@ -192,7 +200,7 @@ excludes = [
 a = Analysis(
     ["main.py"],
     pathex=[str(SPEC_DIR)],
-    binaries=vlc_binaries + _sf_binaries,
+    binaries=vlc_binaries + _sf_binaries + _iff_binaries,
     datas=added_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
