@@ -12,6 +12,21 @@ import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
+# Collect soundfile native libs (libsndfile DLL/SO) and librosa data files.
+# These are not auto-detected by PyInstaller but are required at runtime.
+# ---------------------------------------------------------------------------
+from PyInstaller.utils.hooks import collect_all, collect_data_files
+
+# soundfile: gets _soundfile.pyd + libsndfile64bit.dll (Windows) or .so (Linux/macOS)
+_sf_datas, _sf_binaries, _sf_hiddenimports = collect_all('soundfile')
+
+# librosa: bundled filter/data files (mel filterbanks, etc.)
+try:
+    _lr_datas = collect_data_files('librosa', include_py_files=False)
+except Exception:
+    _lr_datas = []
+
+# ---------------------------------------------------------------------------
 # Resolve project root (directory containing this .spec file)
 # ---------------------------------------------------------------------------
 SPEC_DIR = Path(SPECPATH)  # PyInstaller sets SPECPATH at runtime
@@ -89,7 +104,7 @@ added_datas = [
     ("audio_analysis/", "audio_analysis"),
     ("config.py", "."),
     ("logging_config.py", "."),
-]
+] + _sf_datas + _lr_datas
 
 # Linux: include .desktop and 512-px icon for system integration
 if sys.platform.startswith("linux"):
@@ -142,9 +157,13 @@ hidden_imports = [
     "scipy.special._ufuncs",
     # audio I/O
     "soundfile",
+    "soundfile._soundfile",
     "cffi",
     "audioread",
     "audioread.rawread",
+    "audioread.gstreamer",
+    "audioread.ffdec",
+    "audioread.maddec",
     # matplotlib
     "matplotlib",
     "matplotlib.backends.backend_qt5agg",
@@ -152,7 +171,7 @@ hidden_imports = [
     # PyQt5 extras used by the app
     "PyQt5.QtSvg",
     "PyQt5.QtPrintSupport",
-]
+] + _sf_hiddenimports
 
 # ---------------------------------------------------------------------------
 # Modules to exclude (reduces bundle size — only safe exclusions)
@@ -173,12 +192,12 @@ excludes = [
 a = Analysis(
     ["main.py"],
     pathex=[str(SPEC_DIR)],
-    binaries=vlc_binaries,
+    binaries=vlc_binaries + _sf_binaries,
     datas=added_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=["tools/runtime_hook_camelhot.py"],
     excludes=excludes,
     noarchive=False,
     optimize=0,
