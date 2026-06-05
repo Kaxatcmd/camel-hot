@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 CAMEL-HOT — Generate all required icon and branding assets.
 
@@ -6,17 +7,18 @@ Run ONCE before building on any platform.  Reads assets/camel_mascot.png
 and produces the icon/branding files that build scripts and PyInstaller need.
 
 Output files:
-  assets/camel_hot.ico           – Windows multi-size icon (ICO)
-  assets/camel_hot_512.png       – Linux icon  (512×512 PNG)
-  assets/camel_hot.icns          – macOS icon  (ICNS via iconutil — macOS only)
-  assets/installer_sidebar.png   – Inno Setup welcome/finish panel (410×797)
-  assets/installer_header.png    – Inno Setup inner-page header   (55×58)
+  assets/camel_hot.ico           - Windows multi-size icon (ICO)
+  assets/camel_hot_512.png       - Linux icon  (512x512 PNG)
+  assets/camel_hot.icns          - macOS icon  (ICNS via iconutil -- macOS only)
+  assets/installer_sidebar.png   - Inno Setup welcome/finish panel (410x797)
+  assets/installer_header.png    - Inno Setup inner-page header   (55x58)
 
 Usage:
     pip install Pillow          # one-time
     python tools/generate_icons.py
 """
 
+import io
 import subprocess
 import sys
 import tempfile
@@ -75,13 +77,13 @@ def generate_ico(src: Image.Image) -> None:
     sq = _square_crop(src.convert("RGBA"))
     # Pillow ICO writer: pass sizes= on the single source image; it resizes internally.
     sq.save(out, format="ICO", sizes=[(s, s) for s in ICO_SIZES])
-    print(f"  ✔  {out.name}  ({'/'.join(str(s) for s in ICO_SIZES)} px)")
+    print(f"  OK  {out.name}  ({'/'.join(str(s) for s in ICO_SIZES)} px)")
 
 
 def generate_linux_png(src: Image.Image) -> None:
     out = ASSETS / "camel_hot_512.png"
     _square_crop(src.convert("RGBA")).resize((512, 512), Image.LANCZOS).save(out)
-    print(f"  ✔  {out.name}  (512×512)")
+    print(f"  OK  {out.name}  (512x512)")
 
 
 def generate_installer_sidebar(src: Image.Image) -> None:
@@ -89,7 +91,7 @@ def generate_installer_sidebar(src: Image.Image) -> None:
     out = ASSETS / "installer_sidebar.png"
     canvas = _on_dark_canvas(src.convert("RGBA"), 410, 797, pad_frac=0.08)
     canvas.convert("RGB").save(out, format="PNG")
-    print(f"  ✔  {out.name}  (410×797)")
+    print(f"  OK  {out.name}  (410x797)")
 
 
 def generate_installer_header(src: Image.Image) -> None:
@@ -97,7 +99,7 @@ def generate_installer_header(src: Image.Image) -> None:
     out = ASSETS / "installer_header.png"
     sq = _square_crop(src.convert("RGBA"))
     sq.resize((55, 58), Image.LANCZOS).convert("RGB").save(out, format="PNG")
-    print(f"  ✔  {out.name}  (55×58)")
+    print(f"  OK  {out.name}  (55x58)")
 
 
 def generate_icns(src: Image.Image) -> None:
@@ -105,9 +107,7 @@ def generate_icns(src: Image.Image) -> None:
     out = ASSETS / "camel_hot.icns"
 
     if sys.platform != "darwin":
-        print("  ⚠  camel_hot.icns  skipped — iconutil requires macOS")
-        print("     Run this script on macOS (or on the macOS CI runner)")
-        print("     to generate the .icns file.")
+        print("  SKIP  camel_hot.icns  (iconutil requires macOS)")
         return
 
     sq = _square_crop(src.convert("RGBA"))
@@ -139,7 +139,7 @@ def generate_icns(src: Image.Image) -> None:
             check=True,
         )
 
-    print(f"  ✔  {out.name}  (macOS ICNS via iconutil)")
+    print(f"  OK  {out.name}  (macOS ICNS via iconutil)")
 
 
 # ---------------------------------------------------------------------------
@@ -147,14 +147,18 @@ def generate_icns(src: Image.Image) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Force UTF-8 output on Windows (avoids UnicodeEncodeError with non-ASCII chars)
+    if sys.platform == "win32":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
     if not SOURCE.exists():
         print(f"ERROR: Source image not found: {SOURCE}")
         sys.exit(1)
 
     img = Image.open(SOURCE)
-    print(f"Source : {SOURCE.name}  ({img.width}×{img.height}  {img.mode})")
+    print(f"Source : {SOURCE.name}  ({img.width}x{img.height}  {img.mode})")
     print()
-    print("Generating assets …")
+    print("Generating assets ...")
 
     generate_ico(img)
     generate_linux_png(img)
