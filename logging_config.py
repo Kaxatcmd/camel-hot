@@ -38,10 +38,6 @@ def setup_logging(level: str = None) -> None:
     
     log_level = getattr(logging, level.upper(), logging.INFO)
     
-    # Create logs directory
-    logs_dir = get_logs_dir()
-    log_file = logs_dir / LOG_FILE
-    
     # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
@@ -59,15 +55,22 @@ def setup_logging(level: str = None) -> None:
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
     
-    # File handler with rotation
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file,
-        maxBytes=LOG_MAX_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
-    )
-    file_handler.setLevel(log_level)
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
+    # Create logs directory — fall back to console-only if it fails
+    try:
+        logs_dir = get_logs_dir()
+        log_file = logs_dir / LOG_FILE
+        # File handler with rotation
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+        )
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    except OSError:
+        # Cannot write logs (e.g. read-only filesystem) — continue with console only
+        pass
     
     # Reduce noise from external libraries
     logging.getLogger("urllib3").setLevel(logging.WARNING)

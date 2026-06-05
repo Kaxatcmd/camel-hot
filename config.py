@@ -13,36 +13,49 @@ Usage:
 """
 
 import os
+import sys
 from pathlib import Path
 
 # --- BASE PATHS ---
-# Handle both normal and frozen (PyInstaller/Nuitka) environments
-if getattr(os, "frozen", False):
-    # Running as compiled executable (PyInstaller/Nuitka)
-    BASE_DIR = Path(os.sys._MEIPASS) if hasattr(os.sys, "_MEIPASS") else Path(sys.executable).parent
+# Handle both normal and frozen (PyInstaller) environments
+if getattr(sys, "frozen", False):
+    # Running as compiled executable — read-only bundle dir
+    BASE_DIR = Path(sys._MEIPASS)
+    # User-writable data dir: %APPDATA%\CamelHot on Windows,
+    # ~/.local/share/CamelHot on Linux, ~/Library/Application Support/CamelHot on macOS
+    if sys.platform == "win32":
+        _appdata = Path(os.environ.get("APPDATA", Path.home()))
+        USER_DATA_DIR = _appdata / "CamelHot"
+    elif sys.platform == "darwin":
+        USER_DATA_DIR = Path.home() / "Library" / "Application Support" / "CamelHot"
+    else:
+        _xdg = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        USER_DATA_DIR = _xdg / "CamelHot"
 else:
-    # Running as normal Python script
+    # Running as normal Python script — everything stays in project root
     BASE_DIR = Path(__file__).resolve().parent
+    USER_DATA_DIR = BASE_DIR
 
 PROJECT_ROOT = BASE_DIR
-"""Project root directory."""
+"""Project root directory (read-only when frozen)."""
 
 ASSETS_DIR = PROJECT_ROOT / "assets"
-"""Assets directory (images, icons, etc.)."""
+"""Assets directory (images, icons, etc.) — read-only when frozen."""
 
-INPUT_AUDIO_DIR = PROJECT_ROOT / "input_audio"
+# User-writable directories — always writable regardless of install location
+INPUT_AUDIO_DIR = USER_DATA_DIR / "input_audio"
 """Input audio directory for batch processing."""
 
-OUTPUT_AUDIO_DIR = PROJECT_ROOT / "output_audio"
+OUTPUT_AUDIO_DIR = USER_DATA_DIR / "output_audio"
 """Output directory for organized files."""
 
-LOGS_DIR = PROJECT_ROOT / "logs"
+LOGS_DIR = USER_DATA_DIR / "logs"
 """Logs directory."""
 
-DOCS_DIR = PROJECT_ROOT / "docs"
+DOCS_DIR = USER_DATA_DIR / "docs"
 """Documentation directory."""
 
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = USER_DATA_DIR / "data"
 """Data directory for runtime data files."""
 
 
