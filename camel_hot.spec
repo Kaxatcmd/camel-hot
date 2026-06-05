@@ -155,19 +155,16 @@ hidden_imports = [
 ]
 
 # ---------------------------------------------------------------------------
-# Modules to exclude (reduces bundle size)
+# Modules to exclude (reduces bundle size — only safe exclusions)
 # ---------------------------------------------------------------------------
+# WARNING: Do NOT exclude urllib, http, html, email, xml — librosa and
+# several other dependencies import them internally at runtime.
 excludes = [
     "tkinter",
-    "unittest",
-    "email",
-    "html",
-    "http",
-    "urllib",
-    "xml",
     "pydoc",
     "doctest",
     "difflib",
+    "unittest",
 ]
 
 # ---------------------------------------------------------------------------
