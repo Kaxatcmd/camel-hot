@@ -24,6 +24,8 @@ jobs:
   build-windows:
     name: Build Windows Installer
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -47,9 +49,9 @@ jobs:
         run: choco install vlc --yes --no-progress --ignore-checksums
         shell: cmd
 
-      - name: Copy VLC native libs
-        run: build_windows\get_vlc_libs.bat
-        shell: cmd
+      # get_vlc_libs.bat is for local use only (has interactive `pause`).
+      # In CI, PyInstaller finds VLC directly from the choco-installed path
+      # (C:\Program Files\VideoLAN\VLC) as configured in camel_hot.spec.
 
       - name: Build with PyInstaller
         run: pyinstaller camel_hot.spec --clean --noconfirm
