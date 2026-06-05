@@ -1,0 +1,250 @@
+name: Release Build
+
+# Triggered by version tags (e.g. v2.0.0, v2.1.0-beta.1)
+# Can also be triggered manually for testing.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create GitHub Releases
+
+# ---------------------------------------------------------------------------
+# Shared Python version across all jobs
+# ---------------------------------------------------------------------------
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+# ============================================================================
+#  Windows — CamelHot_Setup.exe  (PyInstaller + Inno Setup)
+# ============================================================================
+  build-windows:
+    name: Build Windows Installer
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller Pillow
+
+      - name: Generate icon assets
+        run: python tools/generate_icons.py
+
+      - name: Install VLC (for bundling)
+        run: choco install vlc --yes --no-progress --ignore-checksums
+        shell: cmd
+
+      - name: Copy VLC native libs
+        run: build_windows\get_vlc_libs.bat
+        shell: cmd
+
+      - name: Build with PyInstaller
+        run: pyinstaller camel_hot.spec --clean --noconfirm
+
+      - name: Verify PyInstaller output
+        run: |
+          if not exist "dist\CamelHot\CamelHot.exe" (
+            echo ERROR: dist\CamelHot\CamelHot.exe not found
+            exit 1
+          )
+          echo OK - dist\CamelHot\CamelHot.exe exists
+        shell: cmd
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes --no-progress
+        shell: cmd
+
+      - name: Create installer with Inno Setup
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build_windows\setup.iss'
+        shell: cmd
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/CamelHot_Setup.exe
+          if-no-files-found: error
+          retention-days: 7
+
+# ============================================================================
+#  macOS — CamelHot.dmg  (PyInstaller + create-dmg)
+# ============================================================================
+  build-macos:
+    name: Build macOS DMG
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install system dependencies
+        run: |
+          brew install libsndfile ffmpeg create-dmg
+          brew install --cask vlc
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller Pillow
+
+      - name: Generate icon assets (includes macOS .icns via iconutil)
+        run: python3 tools/generate_icons.py
+
+      - name: Copy VLC native libs
+        run: bash build_macos/get_vlc_libs.sh
+
+      - name: Build .app and .dmg
+        run: bash build_macos/build.sh
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/CamelHot.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+# ============================================================================
+#  Linux — CamelHot-x86_64.AppImage  (PyInstaller + appimagetool)
+# ============================================================================
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libsndfile1 ffmpeg \
+            vlc libvlc-dev \
+            libfuse2 \
+            xvfb libxcb-xinerama0 libxcb1 libx11-xcb1
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller Pillow
+
+      - name: Generate icon assets
+        run: python3 tools/generate_icons.py
+
+      - name: Copy VLC native libs
+        run: bash build_linux/get_vlc_libs.sh
+
+      - name: Build AppImage (with virtual display for Qt)
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 &
+          sleep 2
+          DISPLAY=:99 bash build_linux/build.sh
+
+      - name: Upload Linux AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/CamelHot-x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+# ============================================================================
+#  Create GitHub Release — runs after all three builds succeed
+# ============================================================================
+  create-release:
+    name: Create GitHub Release
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: release-artifacts
+
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: release-artifacts
+
+      - name: Download Linux AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
+          path: release-artifacts
+
+      - name: List release artifacts
+        run: ls -lh release-artifacts/
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "CAMEL-HOT ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## CAMEL-HOT ${{ github.ref_name }}
+
+            Harmonic Music Analyzer for DJs — standalone installers, **no Python required**.
+
+            ### Downloads
+
+            | Platform | File | Notes |
+            |---|---|---|
+            | 🪟 Windows 10/11 (64-bit) | `CamelHot_Setup.exe` | Installer wizard — double-click to install |
+            | 🍎 macOS 10.13+ | `CamelHot.dmg` | Open DMG, drag to Applications |
+            | 🐧 Linux x86_64 | `CamelHot-x86_64.AppImage` | `chmod +x`, then run directly |
+
+            ### Linux quick start
+            ```bash
+            chmod +x CamelHot-x86_64.AppImage
+            ./CamelHot-x86_64.AppImage
+            ```
+
+            ### macOS security note
+            If macOS Gatekeeper blocks the app, run once in Terminal:
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/CamelHot.app
+            ```
+
+            ---
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what's new.
+          files: |
+            release-artifacts/CamelHot_Setup.exe
+            release-artifacts/CamelHot.dmg
+            release-artifacts/CamelHot-x86_64.AppImage

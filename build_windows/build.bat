@@ -8,6 +8,17 @@ echo ============================================================
 echo.
 
 :: ---------------------------------------------------------------------------
+:: Step 0 — Generate icon assets (requires Pillow: pip install Pillow)
+:: ---------------------------------------------------------------------------
+echo [0/5] Gerando icones...
+cd /d "%~dp0.."
+python tools\generate_icons.py
+if errorlevel 1 (
+    echo     AVISO: Geracao de icones falhou. Continuando com icones existentes...
+)
+echo.
+
+:: ---------------------------------------------------------------------------
 :: Step 1 — Verify / install PyInstaller
 :: ---------------------------------------------------------------------------
 echo [1/5] Verificando PyInstaller...

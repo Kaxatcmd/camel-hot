@@ -1,11 +1,27 @@
 # Como fazer build do CAMEL-HOT
 
-Guia completo para gerar os instaladores standalone para Windows e macOS.  
+Guia completo para gerar os instaladores standalone para Windows, macOS e Linux.  
 O resultado final é uma aplicação que **não requer Python instalado** na máquina do utilizador final.
 
 ---
 
 ## Pré-requisitos
+
+### Todos os sistemas — gerar os ícones primeiro
+
+```bash
+pip install Pillow          # uma vez
+python3 tools/generate_icons.py
+```
+
+Este comando cria todos os assets necessários em `assets/`:
+- `camel_hot.ico` — Windows
+- `camel_hot.icns` — macOS (apenas em macOS via `iconutil`)
+- `camel_hot_512.png` — Linux
+- `installer_sidebar.png` / `installer_header.png` — imagens de branding do instalador Windows
+
+> **Nota macOS:** O `camel_hot.icns` é gerado apenas quando o script corre em macOS.  
+> Para os outros sistemas, o `.icns` deve ser pré-gerado e incluído no repositório.
 
 ### Windows
 
@@ -13,6 +29,7 @@ O resultado final é uma aplicação que **não requer Python instalado** na má
 |---|---|---|
 | Python | 3.10+ | https://www.python.org/downloads/ |
 | pip | (incluído com Python) | — |
+| Pillow | qualquer | `pip install Pillow` |
 | PyInstaller | 6.0+ | `pip install pyinstaller` |
 | VLC Media Player | 3.0+ | https://www.videolan.org/vlc/download-windows.html |
 | Inno Setup | 6.x | https://jrsoftware.org/isdl.php |
@@ -25,48 +42,73 @@ O resultado final é uma aplicação que **não requer Python instalado** na má
 | Ferramenta | Versão mínima | Instalação |
 |---|---|---|
 | Python | 3.10+ | https://www.python.org/downloads/macos/ ou `brew install python` |
+| Pillow | qualquer | `pip install Pillow` |
 | PyInstaller | 6.0+ | `pip install pyinstaller` |
 | Homebrew | qualquer | https://brew.sh |
 | create-dmg | qualquer | `brew install create-dmg` |
 | VLC Media Player | 3.0+ | `brew install --cask vlc` ou https://www.videolan.org/vlc/download-macosx.html |
 
+### Linux
+
+| Ferramenta | Versão mínima | Instalação |
+|---|---|---|
+| Python | 3.10+ | `sudo apt-get install python3 python3-pip` |
+| Pillow | qualquer | `pip3 install Pillow` |
+| PyInstaller | 6.0+ | `pip3 install pyinstaller` |
+| VLC + libvlc-dev | 3.0+ | `sudo apt-get install vlc libvlc-dev` |
+| libfuse2 | qualquer | `sudo apt-get install libfuse2` |
+| curl | qualquer | `sudo apt-get install curl` |
+
 ---
 
 ## Passos Windows (ordem exacta)
 
-### 1. Copiar bibliotecas nativas do VLC
+### 1. Gerar ícones
+
+```bat
+python tools\generate_icons.py
+```
+
+### 2. Copiar bibliotecas nativas do VLC
 
 ```bat
 build_windows\get_vlc_libs.bat
 ```
 
-Este script localiza o VLC instalado e copia `libvlc.dll`, `libvlccore.dll` e a pasta `plugins/` para `vlc_libs/`.  
-Sem este passo, a reprodução de áudio não funcionará na app compilada.
+Copia `libvlc.dll`, `libvlccore.dll` e `plugins/` para `vlc_libs/`.  
+Sem este passo, a reprodução de áudio não funcionará.
 
-### 2. Fazer o build
+### 3. Fazer o build
 
 ```bat
 build_windows\build.bat
 ```
 
 O script:
-1. Verifica/instala o PyInstaller
-2. Limpa o `dist/` anterior
-3. Corre `pyinstaller camel_hot.spec --clean --noconfirm`
-4. Se o Inno Setup estiver instalado, gera automaticamente o instalador
+1. Gera os ícones automaticamente
+2. Verifica/instala o PyInstaller
+3. Limpa o `dist/` anterior
+4. Corre `pyinstaller camel_hot.spec --clean --noconfirm`
+5. Se o Inno Setup estiver instalado, gera automaticamente o instalador
 
-### 3. Output
+### 4. Output
 
 | Ficheiro | Descrição |
 |---|---|
-| `dist\CamelHot\` | Pasta com a app (pode ser distribuída diretamente como zip) |
-| `dist\CamelHot_Setup.exe` | Instalador completo (requer Inno Setup no passo 2) |
+| `dist\CamelHot\` | Pasta com a app (pode ser distribuída directamente como zip) |
+| `dist\CamelHot_Setup.exe` | Instalador completo com branding (requer Inno Setup) |
 
 ---
 
 ## Passos macOS (ordem exacta)
 
-### 1. Copiar bibliotecas nativas do VLC
+### 1. Gerar ícones (inclui .icns via iconutil)
+
+```bash
+python3 tools/generate_icons.py
+```
+
+### 2. Copiar bibliotecas nativas do VLC
 
 ```bash
 bash build_macos/get_vlc_libs.sh
@@ -74,15 +116,15 @@ bash build_macos/get_vlc_libs.sh
 
 Copia `libvlc.dylib`, `libvlccore.dylib` e `plugins/` de `/Applications/VLC.app` para `vlc_libs/`.
 
-### 2. Fazer o build
+### 3. Fazer o build
 
 ```bash
 bash build_macos/build.sh
 ```
 
-O script corre o PyInstaller e depois cria a imagem `.dmg` com o `create-dmg`.
+O script gera os ícones, corre o PyInstaller e cria o `.dmg` com `create-dmg`.
 
-### 3. Output
+### 4. Output
 
 | Ficheiro | Descrição |
 |---|---|
@@ -91,18 +133,97 @@ O script corre o PyInstaller e depois cria a imagem `.dmg` com o `create-dmg`.
 
 ---
 
+## Passos Linux (ordem exacta)
+
+### 1. Gerar ícones
+
+```bash
+python3 tools/generate_icons.py
+```
+
+### 2. Copiar bibliotecas nativas do VLC
+
+```bash
+bash build_linux/get_vlc_libs.sh
+```
+
+Copia `libvlc.so`, `libvlccore.so` e `plugins/` para `vlc_libs/`.
+
+### 3. Fazer o build
+
+```bash
+bash build_linux/build.sh
+```
+
+O script:
+1. Gera os ícones
+2. Verifica/instala o PyInstaller
+3. Corre `pyinstaller camel_hot.spec --clean --noconfirm`
+4. Monta o AppDir com `.desktop` e ícone PNG
+5. Descarrega o `appimagetool` (automaticamente, uma vez)
+6. Empacota tudo como AppImage
+
+### 4. Output
+
+| Ficheiro | Descrição |
+|---|---|
+| `dist/CamelHot-x86_64.AppImage` | AppImage portátil (corre em qualquer Linux x86_64 moderno) |
+
+### 5. Executar o AppImage
+
+```bash
+chmod +x dist/CamelHot-x86_64.AppImage
+./dist/CamelHot-x86_64.AppImage
+```
+
+---
+
+## Build automático via GitHub Actions (releases)
+
+O repositório inclui `.github/workflows/release.yml` que automatiza o build
+para os três sistemas operativos.
+
+### Como criar uma release
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+A pipeline corre automaticamente e:
+1. Compila para Windows, macOS e Linux em paralelo
+2. Cria uma GitHub Release com os três artefactos
+
+### Artefactos por plataforma
+
+| Job | Runner | Output |
+|---|---|---|
+| `build-windows` | `windows-latest` | `CamelHot_Setup.exe` |
+| `build-macos` | `macos-latest` | `CamelHot.dmg` |
+| `build-linux` | `ubuntu-22.04` | `CamelHot-x86_64.AppImage` |
+
+### Trigger manual
+
+Podes activar a pipeline manualmente via GitHub Actions → "Release Build" → "Run workflow".
+
+---
+
 ## Testar o build
 
 ### Windows
 - Instalar `CamelHot_Setup.exe` numa **VM Windows 10/11 limpa** (sem Python instalado)
+- Verificar que o branding aparece no instalador (logo no painel esquerdo)
 - Verificar que a app abre e consegue analisar um ficheiro de áudio
-- Verificar que o VLC reproduz o áudio (requer que os `vlc_libs/` tenham sido incluídos)
+- Verificar que o VLC reproduz o áudio
 
 ### macOS
 - Copiar `CamelHot.dmg` para outro Mac (diferente do Mac de build)
 - Abrir o `.dmg`, arrastar para `/Applications`, lançar
-- Se aparecer aviso de segurança: **Preferências do Sistema → Segurança e Privacidade → Permitir**
-- Para apps não assinadas via Terminal: `xattr -dr com.apple.quarantine /Applications/CamelHot.app`
+- Se aparecer aviso de segurança: `xattr -dr com.apple.quarantine /Applications/CamelHot.app`
+
+### Linux
+- Copiar o `.AppImage` para outra máquina Linux (sem Python instalado)
+- `chmod +x CamelHot-x86_64.AppImage && ./CamelHot-x86_64.AppImage`
 
 ---
 
@@ -112,6 +233,7 @@ O script corre o PyInstaller e depois cria a imagem `.dmg` com o `create-dmg`.
 |---|---|
 | `CamelHot_Setup.exe` | ~300–400 MB |
 | `CamelHot.dmg` | ~300–400 MB |
+| `CamelHot-x86_64.AppImage` | ~350–450 MB |
 
 O tamanho elevado deve-se ao bundling de Python, librosa, NumPy/SciPy e VLC.
 
@@ -121,23 +243,37 @@ O tamanho elevado deve-se ao bundling de Python, librosa, NumPy/SciPy e VLC.
 
 ```
 camel-hot/
+├── tools/
+│   └── generate_icons.py       ← Gerador de ícones e assets do instalador
+├── assets/
+│   ├── camel_mascot.png        ← Imagem fonte (1536×1024)
+│   ├── camel_hot.ico           ← Ícone Windows (gerado)
+│   ├── camel_hot.icns          ← Ícone macOS (gerado em macOS)
+│   ├── camel_hot_512.png       ← Ícone Linux 512×512 (gerado)
+│   ├── camel_hot.desktop       ← Metadados app Linux (para AppImage)
+│   ├── installer_sidebar.png   ← Imagem de branding do instalador 410×797 (gerada)
+│   └── installer_header.png    ← Cabeçalho do instalador 55×58 (gerado)
 ├── camel_hot.spec              ← Configuração do PyInstaller
 ├── vlc_libs/                   ← Libs VLC copiadas pelos scripts get_vlc_libs
-│   ├── libvlc.dll / libvlc.dylib
-│   ├── libvlccore.dll / libvlccore.dylib
-│   └── plugins/
 ├── build_windows/
 │   ├── build.bat               ← Script de build Windows
 │   ├── get_vlc_libs.bat        ← Copia libs VLC (Windows)
-│   └── setup.iss               ← Script Inno Setup (instalador)
+│   └── setup.iss               ← Script Inno Setup (instalador com branding)
 ├── build_macos/
 │   ├── build.sh                ← Script de build macOS
 │   └── get_vlc_libs.sh         ← Copia libs VLC (macOS)
+├── build_linux/
+│   ├── build.sh                ← Script de build Linux (AppImage)
+│   └── get_vlc_libs.sh         ← Copia libs VLC (Linux)
+├── .github/workflows/
+│   ├── ci.yml                  ← CI: testes em push/PR
+│   └── release.yml             ← Release: builds de distribuição em tags v*
 └── dist/                       ← Output gerado (ignorado pelo git)
     ├── CamelHot/               ← Windows: pasta da app
     ├── CamelHot_Setup.exe      ← Windows: instalador
     ├── CamelHot.app            ← macOS: bundle
-    └── CamelHot.dmg            ← macOS: imagem de disco
+    ├── CamelHot.dmg            ← macOS: imagem de disco
+    └── CamelHot-x86_64.AppImage ← Linux: AppImage portátil
 ```
 
 ---
@@ -149,29 +285,31 @@ camel-hot/
 - Adicionar qualquer módulo em falta e repetir o build
 
 ### VLC não reproduz áudio na app compilada
-- Confirmar que `build_windows/get_vlc_libs.bat` (ou `build_macos/get_vlc_libs.sh`) foi corrido **antes** do build
+- Confirmar que o script `get_vlc_libs` da plataforma foi corrido **antes** do build
 - Verificar que `vlc_libs/plugins/` existe e tem conteúdo
-- Confirmar que o VLC instalado no sistema de build tem a mesma arquitectura (64-bit) da app
+- Confirmar que o VLC instalado tem a mesma arquitectura (64-bit) da app
 
 ### App não arranca no macOS ("app danificada")
-- Correr no Terminal: `xattr -dr com.apple.quarantine /Applications/CamelHot.app`
+- `xattr -dr com.apple.quarantine /Applications/CamelHot.app`
 - Ou: **Preferências do Sistema → Segurança e Privacidade → Permitir mesmo assim**
 
 ### App não arranca no Windows ("DLL não encontrada")
 - Instalar os Visual C++ Redistributable: https://aka.ms/vs/17/release/vc_redist.x64.exe
 - Verificar que todas as DLLs do VLC estão em `dist\CamelHot\`
 
-### Build falha com "ModuleNotFoundError" durante a análise
-- Verificar que o ambiente Python de build tem todas as dependências instaladas:
+### AppImage não abre no Linux
+- Confirmar que `libfuse2` está instalado: `sudo apt-get install libfuse2`
+- Confirmar que o ficheiro tem permissão de execução: `chmod +x CamelHot-x86_64.AppImage`
+
+### Build falha com "ModuleNotFoundError"
+- Verificar que o ambiente Python de build tem todas as dependências:
   ```
   pip install -r requirements.txt
   ```
-- Correr o build dentro do venv usado para o desenvolvimento
 
 ### Ícone não aparece na app
-- Criar `assets/camel_hot.ico` (Windows, 256×256px, formato ICO)
-- Criar `assets/camel_hot.icns` (macOS, formato ICNS)
-- O `camel_hot.spec` usa-os automaticamente se existirem
+- Correr `python3 tools/generate_icons.py` para regenerar os ícones
+- Os ficheiros gerados (`camel_hot.ico`, etc.) devem existir em `assets/` antes do build
 
 ---
 
@@ -182,4 +320,6 @@ Para distribuição pública sem avisos de segurança:
 - **Windows:** Assinar `CamelHot.exe` com um certificado Code Signing (EV ou OV)
 - **macOS:** Assinar com Apple Developer ID + Notarização (`xcrun notarytool`)
 
-Estes passos estão fora do âmbito deste guia mas são necessários para distribuição na App Store ou via download directo sem avisos do Gatekeeper/SmartScreen.
+Estes passos estão fora do âmbito deste guia mas são necessários para distribuição
+na App Store ou via download directo sem avisos do Gatekeeper/SmartScreen.
+

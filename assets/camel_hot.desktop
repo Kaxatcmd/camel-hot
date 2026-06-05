@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=CAMEL-HOT
+GenericName=Harmonic Music Analyzer
+Comment=Detect key and BPM of your tracks, then organize them with the Camelot Wheel system for perfect harmonic mixing
+Exec=CamelHot %f
+Icon=camel_hot
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=DJ;music;harmonic;Camelot;BPM;key;mixing;
+MimeType=audio/mpeg;audio/flac;audio/wav;audio/ogg;audio/x-m4a;
+StartupWMClass=CamelHot

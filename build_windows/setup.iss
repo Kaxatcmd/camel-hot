@@ -36,6 +36,11 @@ WizardStyle=modern
 WizardResizable=no
 ; Ícone do instalador (usa o mesmo ícone da app se existir)
 SetupIconFile=..\assets\camel_hot.ico
+; Imagem de boas-vindas/conclusão (painel esquerdo — 410×797 px)
+WizardImageFile=..\assets\installer_sidebar.png
+WizardImageStretch=yes
+; Imagem de cabeçalho nas páginas internas (55×58 px)
+WizardSmallImageFile=..\assets\installer_header.png
 ; Versão Windows mínima: 10
 MinVersion=10.0
 ; Arquitectura

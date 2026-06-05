@@ -17,6 +17,14 @@ echo "============================================================"
 echo ""
 
 # ---------------------------------------------------------------------------
+# Step 0 — Generate icon assets (requires Pillow: pip install Pillow)
+# ---------------------------------------------------------------------------
+echo "[0/5] Gerando ícones..."
+python3 "${PROJECT_ROOT}/tools/generate_icons.py" || \
+    echo "    AVISO: Geração de ícones falhou. Continuando com ícones existentes..."
+echo ""
+
+# ---------------------------------------------------------------------------
 # Step 1 — Verify / install PyInstaller
 # ---------------------------------------------------------------------------
 echo "[1/5] Verificando PyInstaller..."
