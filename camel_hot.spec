@@ -187,7 +187,9 @@ hidden_imports = [
 # WARNING: Do NOT exclude urllib, http, html, email, xml — librosa and
 # several other dependencies import them internally at runtime.
 excludes = [
-    "tkinter",   # only truly safe exclusion — never imported by audio stack
+    "tkinter",   # safe — never used by audio stack
+    "numba",     # optional librosa accelerator — excluded to avoid llvmlite DLL issues
+    "llvmlite",  # numba dependency — complex LLVM DLLs break frozen bundles
 ]
 
 # ---------------------------------------------------------------------------

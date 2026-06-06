@@ -42,6 +42,7 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller Pillow
           pip install soundfile imageio-ffmpeg --force-reinstall
+          pip uninstall numba llvmlite -y || echo "numba not installed, skipping"
 
       - name: Generate icon assets
         run: python tools/generate_icons.py
