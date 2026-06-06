@@ -4951,11 +4951,17 @@ Made for DJs and music lovers!
             self.compat_waveform1.set_label(f"Track 1: {os.path.basename(f1)}")
             self._wf_worker1 = WaveformWorker(f1)
             self._wf_worker1.waveform_ready.connect(self.compat_waveform1.set_data)
+            self._wf_worker1.error.connect(
+                lambda msg: self.compat_waveform1.set_label(f"Track 1 — erro: {msg}")
+            )
             self._wf_worker1.start()
         if f2:
             self.compat_waveform2.set_label(f"Track 2: {os.path.basename(f2)}")
             self._wf_worker2 = WaveformWorker(f2)
             self._wf_worker2.waveform_ready.connect(self.compat_waveform2.set_data)
+            self._wf_worker2.error.connect(
+                lambda msg: self.compat_waveform2.set_label(f"Track 2 — erro: {msg}")
+            )
             self._wf_worker2.start()
 
         # Connect player position to waveform cursors
