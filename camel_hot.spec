@@ -187,11 +187,7 @@ hidden_imports = [
 # WARNING: Do NOT exclude urllib, http, html, email, xml — librosa and
 # several other dependencies import them internally at runtime.
 excludes = [
-    "tkinter",
-    "pydoc",
-    "doctest",
-    "difflib",
-    "unittest",
+    "tkinter",   # only truly safe exclusion — never imported by audio stack
 ]
 
 # ---------------------------------------------------------------------------
