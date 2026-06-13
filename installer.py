@@ -23,7 +23,8 @@ from pathlib import Path
 try:
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QLabel, QPushButton, QProgressBar, QTextEdit, QFrame, QSizePolicy
+        QLabel, QPushButton, QProgressBar, QTextEdit, QFrame, QSizePolicy,
+        QMessageBox
     )
     from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
     from PyQt5.QtGui import QFont, QColor, QPalette
@@ -144,6 +145,7 @@ class InstallerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.python_exec = None
+        self._proc = None      # subprocess.Popen handle for the launched app
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
@@ -318,12 +320,57 @@ class InstallerWindow(QMainWindow):
     def _launch_app(self):
         if not self.python_exec:
             return
+
+        # Preflight: verify critical imports are available in the venv
+        self._log("\n🔍 Verificando dependências antes de lançar...")
+        preflight = subprocess.run(
+            [self.python_exec, "-c", "import librosa, soundfile, PyQt5"],
+            capture_output=True, text=True, cwd=str(REPO_DIR)
+        )
+        if preflight.returncode != 0:
+            err = (preflight.stderr.strip() or preflight.stdout.strip()
+                   or "Erro desconhecido — sem saída capturada.")
+            self._log(f"\n❌ Preflight falhou:\n{err}")
+            QMessageBox.critical(
+                self,
+                "Verificação de dependências falhou",
+                f"Não foi possível importar dependências críticas:\n\n{err}\n\n"
+                "Por favor, reinstale a aplicação clicando em 'Instalar'."
+            )
+            return
+
         self._log("\n🚀 A lançar DJ Harmonic Analyzer...")
-        subprocess.Popen(
+        self._proc = subprocess.Popen(
             [self.python_exec, str(REPO_DIR / "main.py")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             cwd=str(REPO_DIR)
         )
-        QTimer.singleShot(800, self.close)
+        # Check for an immediate crash after 3 seconds without blocking the UI
+        QTimer.singleShot(3000, self._check_launch)
+
+    def _check_launch(self):
+        """Called 3 s after launching — if the process already exited it crashed."""
+        if self._proc is None:
+            return
+        exit_code = self._proc.poll()
+        if exit_code is not None:
+            # Process exited early — read all output and surface it
+            stdout = self._proc.stdout.read()
+            stderr = self._proc.stderr.read()
+            output = stderr.strip() or stdout.strip() or "Sem saída capturada."
+            self._log(f"\n❌ Aplicação encerrou inesperadamente (código {exit_code}):\n{output}")
+            QMessageBox.critical(
+                self,
+                "Aplicação encerrou inesperadamente",
+                f"DJ Harmonic Analyzer encerrou imediatamente após o lançamento "
+                f"(código de saída: {exit_code}).\n\n{output}"
+            )
+        else:
+            # Still running — launched successfully
+            self._log("✅ Aplicação iniciada com sucesso.")
+            self.close()
 
     def _log(self, text: str):
         self.log.append(text)

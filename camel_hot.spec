@@ -23,7 +23,10 @@ _sf_datas, _sf_binaries, _sf_hiddenimports = collect_all('soundfile')
 # imageio-ffmpeg: ships a static ffmpeg binary — needed for MP3/AAC/m4a decoding
 try:
     _iff_datas, _iff_binaries, _iff_hiddenimports = collect_all('imageio_ffmpeg')
-except Exception:
+except Exception as _iff_exc:
+    print(f"WARNING: imageio_ffmpeg collection failed: {_iff_exc}")
+    print("WARNING: MP3/AAC decoding may be broken in the frozen bundle.")
+    print("WARNING: Install imageio-ffmpeg and rebuild: pip install imageio-ffmpeg")
     _iff_datas, _iff_binaries, _iff_hiddenimports = [], [], []
 
 # librosa: bundled filter/data files (mel filterbanks, etc.)
@@ -112,6 +115,21 @@ added_datas = [
     ("logging_config.py", "."),
 ] + _sf_datas + _lr_datas + _iff_datas
 
+# Windows-specific: explicitly bundle libsndfile64bit.dll inside _soundfile_data/
+# collect_all('soundfile') should already include this, but we add it explicitly
+# to guarantee the DLL lands in the correct sub-directory of the frozen bundle.
+if sys.platform == "win32":
+    try:
+        import soundfile as _sf_mod
+        _sf_data_dir = Path(_sf_mod.__file__).parent / "_soundfile_data"
+        _libsndfile_dll = _sf_data_dir / "libsndfile64bit.dll"
+        if _libsndfile_dll.exists():
+            added_datas.append((str(_libsndfile_dll), "_soundfile_data"))
+        else:
+            print("WARNING: libsndfile64bit.dll not found — soundfile may not work in the bundle.")
+    except Exception as _dll_exc:
+        print(f"WARNING: Could not locate libsndfile64bit.dll: {_dll_exc}")
+
 # Linux: include .desktop and 512-px icon for system integration
 if sys.platform.startswith("linux"):
     _desktop = SPEC_DIR / "assets" / "camel_hot.desktop"
@@ -186,10 +204,11 @@ hidden_imports = [
 # ---------------------------------------------------------------------------
 # WARNING: Do NOT exclude urllib, http, html, email, xml — librosa and
 # several other dependencies import them internally at runtime.
+# NOTE: numba and llvmlite are optional librosa accelerators. They are NOT
+# excluded here because doing so can break the librosa import chain on some
+# Windows environments (numba hooks alter how llvmlite DLLs are resolved).
 excludes = [
     "tkinter",   # safe — never used by audio stack
-    "numba",     # optional librosa accelerator — excluded to avoid llvmlite DLL issues
-    "llvmlite",  # numba dependency — complex LLVM DLLs break frozen bundles
 ]
 
 # ---------------------------------------------------------------------------
@@ -221,7 +240,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,       # windowed — no terminal visible
+    console=True,        # TODO: set back to False for production release
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

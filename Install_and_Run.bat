@@ -49,6 +49,45 @@ if errorlevel 1 (
     )
 )
 
+:: ---- Windows audio stack ----------------------------------------------------
+:: soundfile  → bundles libsndfile64bit.dll for Windows
+:: imageio-ffmpeg → static ffmpeg binary detected automatically by librosa
+:: audioread  → Windows audio backend fallback (WMF/GStreamer)
+echo.
+echo  Instalando dependencias de audio para Windows...
+python -m pip install soundfile --quiet
+if errorlevel 1 (
+    echo  [AVISO] Falha ao instalar soundfile. Verifique a ligacao a internet.
+)
+python -m pip install imageio-ffmpeg --quiet
+if errorlevel 1 (
+    echo  [AVISO] Falha ao instalar imageio-ffmpeg. Verifique a ligacao a internet.
+)
+python -m pip install audioread --quiet
+if errorlevel 1 (
+    echo  [AVISO] Falha ao instalar audioread. Verifique a ligacao a internet.
+)
+
+:: ---- Health check: verify librosa + soundfile are importable ----------------
+echo.
+echo  Verificando stack de audio (librosa + soundfile)...
+python -c "import librosa, soundfile; librosa.load" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo  [ERRO] Stack de audio nao disponivel apos instalacao.
+    echo.
+    echo  Possíveis causas:
+    echo    - librosa nao esta instalado ^(sera instalado pelo instalador grafico^)
+    echo    - soundfile ou libsndfile64bit.dll em falta
+    echo    - Dependencias corrompidas
+    echo.
+    echo  Execute o instalador grafico que se abrira a seguir.
+    echo  Se o problema persistir, execute manualmente:
+    echo    pip install librosa soundfile imageio-ffmpeg audioread
+    echo.
+    pause
+)
+
 :: ---- Lançar installer GUI ---------------------------------------------------
 echo  Abrindo instalador...
 echo.
