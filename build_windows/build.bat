@@ -8,10 +8,38 @@ echo ============================================================
 echo.
 
 :: ---------------------------------------------------------------------------
-:: Step 0 — Generate icon assets (requires Pillow: pip install Pillow)
+:: Step 0 — Verify critical build dependencies
 :: ---------------------------------------------------------------------------
-echo [0/5] Gerando icones...
+echo [0/5] Verificando dependencias de build...
 cd /d "%~dp0.."
+
+:: imageio-ffmpeg MUST be installed before building
+python -c "import imageio_ffmpeg" >nul 2>&1
+if errorlevel 1 (
+    echo     ERRO: imageio-ffmpeg nao esta instalado.
+    echo     Sem isto, ficheiros MP3/AAC NAO poderao ser analisados no bundle.
+    echo     A instalar agora...
+    pip install "imageio-ffmpeg>=0.5.0"
+    if errorlevel 1 (
+        echo     ERRO: Falha ao instalar imageio-ffmpeg. Verifica a internet.
+        pause
+        exit /b 1
+    )
+    echo     imageio-ffmpeg instalado.
+) else (
+    echo     imageio-ffmpeg: OK
+)
+
+:: soundfile must also be present
+python -c "import soundfile" >nul 2>&1
+if errorlevel 1 (
+    echo     Instalando soundfile...
+    pip install "soundfile>=0.12.0"
+)
+
+:: Generate icon assets (requires Pillow)
+echo.
+echo     Gerando icones...
 python tools\generate_icons.py
 if errorlevel 1 (
     echo     AVISO: Geracao de icones falhou. Continuando com icones existentes...

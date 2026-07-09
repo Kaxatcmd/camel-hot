@@ -27,7 +27,7 @@ def test_imports():
         print("OK")
         
         print("✓ Importando file_manager...", end=" ")
-        from file_manager.organizaer import find_audio_files
+        from gui.file_manager.organizer import find_audio_files
         print("OK")
         
         print("✓ Importando utils...", end=" ")
@@ -46,7 +46,7 @@ def test_imports():
         print("OK")
         
         print("✓ Importando file_manager...", end=" ")
-        from file_manager.organizaer import find_audio_files
+        from gui.file_manager.organizer import find_audio_files
         print("OK")
         
         print("✓ Importando utils...", end=" ")

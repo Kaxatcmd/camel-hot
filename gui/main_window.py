@@ -2573,6 +2573,55 @@ class DJAnalyzerGUI(QMainWindow):
         QDialog QPushButton:pressed {
             background: #1aa34a;
         }
+
+        /* ---- QFileDialog: flat/safe styles to prevent gradient-related crashes
+               during directory navigation on Linux (non-native mode). ---------- */
+        QFileDialog QPushButton {
+            background: #e8e8e8;
+            color: #222222;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-weight: 500;
+            font-size: 10px;
+            min-width: 60px;
+        }
+        QFileDialog QPushButton:hover { background: #d8d8d8; border: 1px solid #aaaaaa; }
+        QFileDialog QPushButton:pressed { background: #c8c8c8; }
+        QFileDialog QListView {
+            background: white;
+            color: #222222;
+            border: 1px solid #cccccc;
+        }
+        QFileDialog QListView::item:selected { background: #4A90E2; color: white; }
+        QFileDialog QListView::item:hover    { background: #e8f0ff; color: #222222; }
+        QFileDialog QTreeView {
+            background: white;
+            color: #222222;
+            border: 1px solid #cccccc;
+        }
+        QFileDialog QTreeView::item:selected { background: #4A90E2; color: white; }
+        QFileDialog QTreeView::item:hover    { background: #e8f0ff; color: #222222; }
+        QFileDialog QHeaderView::section {
+            background: #f0f0f0;
+            color: #333333;
+            border: 1px solid #cccccc;
+            padding: 4px;
+        }
+        QFileDialog QLineEdit {
+            background: white;
+            color: #222222;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+        QFileDialog QComboBox {
+            background: white;
+            color: #222222;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
         """
 
         night = """
@@ -2831,6 +2880,54 @@ class DJAnalyzerGUI(QMainWindow):
                 stop:0 #1ed760, stop:1 #1aa34a);
         }
         QDialog QPushButton:pressed { background: #1aa34a; }
+
+        /* ---- QFileDialog: flat/safe styles (dark theme variant) ------------ */
+        QFileDialog QPushButton {
+            background: #3a3a3a;
+            color: #E0E0E0;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-weight: 500;
+            font-size: 10px;
+            min-width: 60px;
+        }
+        QFileDialog QPushButton:hover { background: #4a4a4a; border: 1px solid #777777; }
+        QFileDialog QPushButton:pressed { background: #2a2a2a; }
+        QFileDialog QListView {
+            background: #2a2a2a;
+            color: #E0E0E0;
+            border: 1px solid #444444;
+        }
+        QFileDialog QListView::item:selected { background: #1565C0; color: white; }
+        QFileDialog QListView::item:hover    { background: #333333; color: #E0E0E0; }
+        QFileDialog QTreeView {
+            background: #2a2a2a;
+            color: #E0E0E0;
+            border: 1px solid #444444;
+        }
+        QFileDialog QTreeView::item:selected { background: #1565C0; color: white; }
+        QFileDialog QTreeView::item:hover    { background: #333333; color: #E0E0E0; }
+        QFileDialog QHeaderView::section {
+            background: #3a3a3a;
+            color: #E0E0E0;
+            border: 1px solid #555555;
+            padding: 4px;
+        }
+        QFileDialog QLineEdit {
+            background: #2a2a2a;
+            color: #E0E0E0;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+        QFileDialog QComboBox {
+            background: #2a2a2a;
+            color: #E0E0E0;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
         """
 
         self.setStyleSheet(night if dark else stylesheet)
@@ -4796,9 +4893,7 @@ Made for DJs and music lovers!
 
     def browse_analyze_file(self):
         """Abre diálogo para selecionar arquivo"""
-        file_dialog = QFileDialog()
-        file_dialog.setStyleSheet(self.get_file_dialog_stylesheet())
-        file_path, _ = file_dialog.getOpenFileName(
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Selecione um arquivo de áudio",
             "",
@@ -4807,38 +4902,143 @@ Made for DJs and music lovers!
         if file_path:
             self.selected_file = file_path
             self.analyze_file_input.setText(file_path)
-    
+
+    # ------------------------------------------------------------------
+    # Crash-safe directory picker
+    # ------------------------------------------------------------------
+    def _pick_folder(self, title):
+        """
+        Open a directory picker that is safe from gradient-rendering crashes.
+
+        Background: on Linux, QFileDialog.getExistingDirectory() with ShowDirsOnly
+        forces Qt's non-native dialog (the GTK picker does not support dirs-only
+        mode). That non-native dialog inherits the main window's stylesheet which
+        has gradient QPushButton rules. Navigating directories triggers rapid
+        repaints of those gradient buttons → crash.
+
+        Using the instance API lets us set an explicit, gradient-free stylesheet
+        on the dialog before exec_(), overriding the inherited parent styles.
+        """
+        d = QFileDialog(self)
+        d.setWindowTitle(title)
+        d.setFileMode(QFileDialog.Directory)
+        d.setOption(QFileDialog.ShowDirsOnly, True)
+
+        # Flat, gradient-free stylesheet scoped to this dialog only.
+        # No gradient rules → no rendering crash during directory navigation.
+        if self._dark:
+            d.setStyleSheet("""
+                QFileDialog            { background: #2a2a2a; color: #E0E0E0; }
+                QWidget                { background: #2a2a2a; color: #E0E0E0; }
+                QPushButton            {
+                    background: #3a3a3a; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 4px;
+                    padding: 4px 12px; min-width: 64px; font-size: 11px;
+                }
+                QPushButton:hover      { background: #4a4a4a; border-color: #777; }
+                QPushButton:pressed    { background: #252525; }
+                QTreeView, QListView   {
+                    background: #222; color: #E0E0E0; border: 1px solid #444;
+                    outline: none;
+                }
+                QTreeView::item:selected,
+                QListView::item:selected   { background: #1565C0; color: #fff; }
+                QTreeView::item:hover,
+                QListView::item:hover      { background: #333; color: #E0E0E0; }
+                QHeaderView::section   {
+                    background: #3a3a3a; color: #E0E0E0;
+                    border: 1px solid #555; padding: 4px;
+                }
+                QLineEdit              {
+                    background: #333; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 4px; padding: 4px 8px;
+                }
+                QComboBox              {
+                    background: #333; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 4px; padding: 4px 8px;
+                }
+                QLabel                 { color: #E0E0E0; background: transparent; }
+                QToolBar               { background: #2a2a2a; border: none; }
+                QToolButton            {
+                    background: #3a3a3a; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 3px; padding: 3px;
+                }
+                QToolButton:hover      { background: #4a4a4a; }
+                QSplitter::handle      { background: #444; }
+                QScrollBar:vertical    { background: #2a2a2a; width: 10px; }
+                QScrollBar::handle:vertical { background: #555; border-radius: 4px; }
+            """)
+        else:
+            d.setStyleSheet("""
+                QFileDialog            { background: #f8f8f8; color: #222; }
+                QWidget                { background: #f8f8f8; color: #222; }
+                QPushButton            {
+                    background: #ebebeb; color: #222;
+                    border: 1px solid #ccc; border-radius: 4px;
+                    padding: 4px 12px; min-width: 64px; font-size: 11px;
+                }
+                QPushButton:hover      { background: #ddd; border-color: #aaa; }
+                QPushButton:pressed    { background: #c8c8c8; }
+                QTreeView, QListView   {
+                    background: #fff; color: #222; border: 1px solid #ccc;
+                    outline: none;
+                }
+                QTreeView::item:selected,
+                QListView::item:selected   { background: #4A90E2; color: #fff; }
+                QTreeView::item:hover,
+                QListView::item:hover      { background: #e8f0ff; color: #222; }
+                QHeaderView::section   {
+                    background: #ebebeb; color: #333;
+                    border: 1px solid #ccc; padding: 4px;
+                }
+                QLineEdit              {
+                    background: #fff; color: #222;
+                    border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px;
+                }
+                QComboBox              {
+                    background: #fff; color: #222;
+                    border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px;
+                }
+                QLabel                 { color: #222; background: transparent; }
+                QToolBar               { background: #ebebeb; border: none; }
+                QToolButton            {
+                    background: #ebebeb; color: #222;
+                    border: 1px solid #ccc; border-radius: 3px; padding: 3px;
+                }
+                QToolButton:hover      { background: #ddd; }
+                QSplitter::handle      { background: #ddd; }
+                QScrollBar:vertical    { background: #f0f0f0; width: 10px; }
+                QScrollBar::handle:vertical { background: #bbb; border-radius: 4px; }
+            """)
+
+        if d.exec_():
+            files = d.selectedFiles()
+            return files[0] if files else ""
+        return ""
+
     def browse_org_input(self):
         """Seleciona pasta de entrada para organizar"""
-        folder_dialog = QFileDialog()
-        folder_dialog.setStyleSheet(self.get_file_dialog_stylesheet())
-        folder = folder_dialog.getExistingDirectory(self, "Selecione a pasta com músicas")
+        folder = self._pick_folder("Selecione a pasta com músicas")
         if folder:
             self.selected_input_folder = folder
             self.org_input.setText(folder)
-    
+
     def browse_org_output(self):
         """Seleciona pasta de saída para organizar"""
-        folder_dialog = QFileDialog()
-        folder_dialog.setStyleSheet(self.get_file_dialog_stylesheet())
-        folder = folder_dialog.getExistingDirectory(self, "Selecione a pasta de saída")
+        folder = self._pick_folder("Selecione a pasta de saída")
         if folder:
             self.selected_output_folder = folder
             self.org_output.setText(folder)
-    
+
     def browse_pl_input(self):
         """Seleciona pasta para criar playlist"""
-        folder_dialog = QFileDialog()
-        folder_dialog.setStyleSheet(self.get_file_dialog_stylesheet())
-        folder = folder_dialog.getExistingDirectory(self, "Selecione a pasta com músicas")
+        folder = self._pick_folder("Selecione a pasta com músicas")
         if folder:
             self.pl_input.setText(folder)
-    
+
     def browse_compat_file1(self):
         """Abre diálogo para selecionar primeiro arquivo"""
-        file_dialog = QFileDialog()
-        file_dialog.setStyleSheet(self.get_file_dialog_stylesheet())
-        file_path, _ = file_dialog.getOpenFileName(
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Selecione o primeiro arquivo de áudio",
             "",
@@ -4847,12 +5047,10 @@ Made for DJs and music lovers!
         if file_path:
             self.compat_file1_path = file_path
             self.compat_file1.setText(file_path)
-    
+
     def browse_compat_file2(self):
         """Abre diálogo para selecionar segundo arquivo"""
-        file_dialog = QFileDialog()
-        file_dialog.setStyleSheet(self.get_file_dialog_stylesheet())
-        file_path, _ = file_dialog.getOpenFileName(
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Selecione o segundo arquivo de áudio",
             "",
@@ -4861,6 +5059,7 @@ Made for DJs and music lovers!
         if file_path:
             self.compat_file2_path = file_path
             self.compat_file2.setText(file_path)
+
     
     def handle_transition_comparison(self):
         """Compara compatibilidade de transição entre dois arquivos"""

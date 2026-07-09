@@ -50,40 +50,43 @@ if errorlevel 1 (
 )
 
 :: ---- Windows audio stack ----------------------------------------------------
-:: soundfile  → bundles libsndfile64bit.dll for Windows
-:: imageio-ffmpeg → static ffmpeg binary detected automatically by librosa
-:: audioread  → Windows audio backend fallback (WMF/GStreamer)
+:: soundfile   - bundles libsndfile64bit.dll for WAV/FLAC on Windows
+:: imageio-ffmpeg - ships a static ffmpeg binary; required for MP3/AAC/OGG
+:: audioread   - multi-backend audio loader used by librosa
 echo.
 echo  Instalando dependencias de audio para Windows...
-python -m pip install soundfile --quiet
+
+python -m pip install "soundfile>=0.12.0" --quiet
 if errorlevel 1 (
-    echo  [AVISO] Falha ao instalar soundfile. Verifique a ligacao a internet.
-)
-python -m pip install imageio-ffmpeg --quiet
-if errorlevel 1 (
-    echo  [AVISO] Falha ao instalar imageio-ffmpeg. Verifique a ligacao a internet.
-)
-python -m pip install audioread --quiet
-if errorlevel 1 (
-    echo  [AVISO] Falha ao instalar audioread. Verifique a ligacao a internet.
+    echo  [AVISO] Falha ao instalar soundfile.
 )
 
-:: ---- Health check: verify librosa + soundfile are importable ----------------
+python -m pip install "imageio-ffmpeg>=0.5.0" --quiet
+if errorlevel 1 (
+    echo  [ERRO CRITICO] Falha ao instalar imageio-ffmpeg.
+    echo  Sem imageio-ffmpeg, ficheiros MP3 NAO podem ser analisados.
+    echo  Verifica a tua ligacao a internet e volta a tentar.
+    pause
+    exit /b 1
+)
+
+python -m pip install "audioread>=3.0.0" --quiet
+if errorlevel 1 (
+    echo  [AVISO] Falha ao instalar audioread.
+)
+
+:: ---- Health check: verify complete audio stack ------------------------------
 echo.
-echo  Verificando stack de audio (librosa + soundfile)...
-python -c "import librosa, soundfile; librosa.load" >nul 2>&1
+echo  Verificando stack de audio completo...
+python -c "import librosa, soundfile, imageio_ffmpeg; print('OK')" >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo  [ERRO] Stack de audio nao disponivel apos instalacao.
+    echo  [ERRO] Stack de audio incompleto.
     echo.
-    echo  Possíveis causas:
-    echo    - librosa nao esta instalado ^(sera instalado pelo instalador grafico^)
-    echo    - soundfile ou libsndfile64bit.dll em falta
-    echo    - Dependencias corrompidas
-    echo.
-    echo  Execute o instalador grafico que se abrira a seguir.
-    echo  Se o problema persistir, execute manualmente:
+    echo  Solucao manual:
     echo    pip install librosa soundfile imageio-ffmpeg audioread
+    echo.
+    echo  O instalador grafico tentara corrigir isto automaticamente.
     echo.
     pause
 )
@@ -93,3 +96,4 @@ echo  Abrindo instalador...
 echo.
 python "%~dp0installer.py"
 exit /b %ERRORLEVEL%
+

@@ -22,12 +22,18 @@ _sf_datas, _sf_binaries, _sf_hiddenimports = collect_all('soundfile')
 
 # imageio-ffmpeg: ships a static ffmpeg binary — needed for MP3/AAC/m4a decoding
 try:
+    import importlib.util as _ilu
+    if _ilu.find_spec('imageio_ffmpeg') is None:
+        raise ImportError("imageio_ffmpeg not installed")
     _iff_datas, _iff_binaries, _iff_hiddenimports = collect_all('imageio_ffmpeg')
 except Exception as _iff_exc:
-    print(f"WARNING: imageio_ffmpeg collection failed: {_iff_exc}")
-    print("WARNING: MP3/AAC decoding may be broken in the frozen bundle.")
-    print("WARNING: Install imageio-ffmpeg and rebuild: pip install imageio-ffmpeg")
-    _iff_datas, _iff_binaries, _iff_hiddenimports = [], [], []
+    print(f"ERROR: imageio_ffmpeg collection failed: {_iff_exc}")
+    print("ERROR: MP3/AAC decoding WILL BE BROKEN in the frozen bundle.")
+    print("SOLUTION: Install imageio-ffmpeg before building:")
+    print("  pip install imageio-ffmpeg")
+    print("  Then rebuild.")
+    import sys as _sys
+    _sys.exit(1)  # Fail fast — do not silently produce a broken build
 
 # librosa: bundled filter/data files (mel filterbanks, etc.)
 try:
@@ -184,12 +190,11 @@ hidden_imports = [
     "soundfile._soundfile",
     "cffi",
     "audioread",
-    "audioread.rawread",
-    "audioread.gstreamer",
-    "audioread.ffdec",
-    "audioread.maddec",
-    "audioread.win_wma",   # Windows Media Foundation backend (MP3 on Windows)
-    "imageio_ffmpeg",
+    "audioread.rawread",   # raw/soundfile backend (WAV, FLAC, etc.)
+    "audioread.ffdec",    # ffmpeg backend — primary MP3/AAC decoder
+    # NOTE: audioread.gstreamer, audioread.win_wma, audioread.maddec were
+    # removed from audioread 3.x — do NOT add them as hidden imports.
+    "imageio_ffmpeg",     # provides the static ffmpeg binary used by audioread.ffdec
     # matplotlib
     "matplotlib",
     "matplotlib.backends.backend_qt5agg",
@@ -240,7 +245,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,        # TODO: set back to False for production release
+    console=False,       # Windowed app — no console window in production
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -272,7 +277,11 @@ if sys.platform == "darwin":
             "CFBundleShortVersionString": "2.0",
             "CFBundleVersion": "2.0.0",
             "NSHighResolutionCapable": True,
-            "LSMinimumSystemVersion": "10.13.0",
-            "NSHumanReadableCopyright": "© 2024 Kaxatcmd",
+            # 10.15 (Catalina) minimum — first macOS with notarization enforcement.
+            # Older targets risk linking against removed APIs.
+            "LSMinimumSystemVersion": "10.15.0",
+            "NSHumanReadableCopyright": "\u00a9 2024 Kaxatcmd",
+            # Required on Ventura/Sonoma for microphone/file access dialogs
+            "NSAppleEventsUsageDescription": "CamelHot needs file access to analyze audio.",
         },
     )

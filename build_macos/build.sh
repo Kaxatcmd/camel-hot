@@ -3,6 +3,11 @@
 #  CAMEL-HOT — macOS Build Script
 #  Gera: dist/CamelHot.dmg
 #  Uso:  bash build_macos/build.sh
+#
+#  ARQUITETURA: Por defeito gera um binário para a arquitetura
+#  nativa do Mac onde o script é executado.
+#  Para gerar um binário universal (Intel + Apple Silicon):
+#    ARCH=universal2 bash build_macos/build.sh
 # =============================================================
 set -euo pipefail
 
@@ -11,23 +16,42 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${PROJECT_ROOT}"
 
+# Arquitetura alvo (pode ser sobrescrita com ARCH=universal2)
+TARGET_ARCH="${ARCH:-}"
+
 echo "============================================================"
 echo "  CAMEL-HOT — macOS Build Script"
 echo "============================================================"
+if [ -n "$TARGET_ARCH" ]; then
+    echo "  Arquitetura alvo: $TARGET_ARCH"
+else
+    echo "  Arquitetura alvo: nativa ($(uname -m))"
+fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 0 — Generate icon assets (requires Pillow: pip install Pillow)
+# Step 0 — Verify critical dependencies are installed
 # ---------------------------------------------------------------------------
-echo "[0/5] Gerando ícones..."
-python3 "${PROJECT_ROOT}/tools/generate_icons.py" || \
+echo "[0/6] Verificando dependências de build..."
+
+# imageio-ffmpeg is required — abort if missing
+if ! python3 -c "import imageio_ffmpeg" 2>/dev/null; then
+    echo "    ERRO: imageio-ffmpeg não está instalado."
+    echo "    Instala com: pip install imageio-ffmpeg"
+    echo "    Sem isto, ficheiros MP3/AAC NÃO poderão ser analisados no bundle."
+    exit 1
+fi
+echo "    imageio-ffmpeg: OK"
+
+# Generate icon assets
+python3 "${PROJECT_ROOT}/tools/generate_icons.py" 2>/dev/null || \
     echo "    AVISO: Geração de ícones falhou. Continuando com ícones existentes..."
 echo ""
 
 # ---------------------------------------------------------------------------
 # Step 1 — Verify / install PyInstaller
 # ---------------------------------------------------------------------------
-echo "[1/5] Verificando PyInstaller..."
+echo "[1/6] Verificando PyInstaller..."
 if ! command -v pyinstaller &>/dev/null; then
     echo "    PyInstaller não encontrado. A instalar..."
     pip install pyinstaller
@@ -40,7 +64,7 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 2 — Verify create-dmg
 # ---------------------------------------------------------------------------
-echo "[2/5] Verificando create-dmg..."
+echo "[2/6] Verificando create-dmg..."
 if ! command -v create-dmg &>/dev/null; then
     echo "    create-dmg não encontrado."
     echo ""
@@ -72,7 +96,7 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 3 — Clean previous dist/
 # ---------------------------------------------------------------------------
-echo "[3/5] A limpar builds anteriores..."
+echo "[3/6] A limpar builds anteriores..."
 if [ -d "dist/CamelHot.app" ]; then
     rm -rf "dist/CamelHot.app"
     echo "    dist/CamelHot.app removido."
@@ -86,8 +110,16 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 4 — Run PyInstaller
 # ---------------------------------------------------------------------------
-echo "[4/5] A correr PyInstaller..."
-pyinstaller camel_hot.spec --clean --noconfirm
+echo "[4/6] A correr PyInstaller..."
+
+# Build extra args for architecture targeting
+PYINSTALLER_EXTRA_ARGS=""
+if [ -n "${TARGET_ARCH}" ]; then
+    PYINSTALLER_EXTRA_ARGS="--target-architecture ${TARGET_ARCH}"
+fi
+
+# shellcheck disable=SC2086
+pyinstaller camel_hot.spec --clean --noconfirm ${PYINSTALLER_EXTRA_ARGS}
 
 if [ ! -d "dist/CamelHot.app" ]; then
     echo ""
@@ -99,9 +131,18 @@ echo "    OK — dist/CamelHot.app criado."
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 5 — Create .dmg
+# Step 5 — Remove Gatekeeper quarantine from the built .app
 # ---------------------------------------------------------------------------
-echo "[5/5] A criar imagem de disco .dmg..."
+echo "[5/6] A remover atributo de quarentena do Gatekeeper..."
+xattr -dr com.apple.quarantine "dist/CamelHot.app" 2>/dev/null && \
+    echo "    Quarentena removida." || \
+    echo "    Nenhum atributo de quarentena encontrado (OK)."
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 6 — Create .dmg
+# ---------------------------------------------------------------------------
+echo "[6/6] A criar imagem de disco .dmg..."
 
 if [ "${CREATE_DMG_AVAILABLE:-true}" = "false" ]; then
     echo "    A saltar criação do .dmg (create-dmg não disponível)."
@@ -109,6 +150,9 @@ if [ "${CREATE_DMG_AVAILABLE:-true}" = "false" ]; then
     echo "============================================================"
     echo "  Build concluído (sem .dmg)."
     echo "  App em: dist/CamelHot.app"
+    echo ""
+    echo "  NOTA: Para distribuição sem assinatura, instrui os utilizadores"
+    echo "  a clicarem com o botão direito → Abrir, na primeira execução."
     echo "============================================================"
     exit 0
 fi
@@ -141,6 +185,12 @@ DMG_SIZE=$(du -sh "dist/CamelHot.dmg" | cut -f1)
 echo ""
 echo "============================================================"
 echo "  Build concluído com sucesso!"
-echo "  Ficheiro: dist/CamelHot.dmg"
-echo "  Tamanho:  ${DMG_SIZE}"
+echo "  Ficheiro: dist/CamelHot.dmg  (${DMG_SIZE})"
+echo ""
+echo "  DISTRIBUIÇÃO:"
+echo "  - Os utilizadores devem clique direito → Abrir na 1.ª execução"
+echo "    (Gatekeeper bloqueia apps não assinadas por defeito)"
+echo "  - Para assinar: codesign --deep --sign 'Developer ID' dist/CamelHot.app"
+echo "  - Para build universal (Intel+ARM): ARCH=universal2 bash $0"
 echo "============================================================"
+

@@ -531,6 +531,133 @@ def detect_bpm_advanced(file_path):
                 "half_time_bpm": None, "double_time_bpm": None}
 
 
+def _load_audio_safe(file_path, duration=60):
+    """
+    Load audio with a clear error message if the format is not supported.
+
+    Returns (y, sr) or raises an informative RuntimeError.
+    """
+    try:
+        return librosa.load(file_path, duration=duration)
+    except Exception as exc:
+        msg = str(exc)
+        # Provide a user-friendly hint for the most common frozen-build failure
+        if 'NoBackendError' in type(exc).__name__ or 'backend' in msg.lower() or 'ffmpeg' in msg.lower():
+            raise RuntimeError(
+                f"Cannot decode audio file '{file_path}'.\n"
+                "A compatible audio decoder (ffmpeg) was not found.\n"
+                "Ensure imageio-ffmpeg is installed: pip install imageio-ffmpeg"
+            ) from exc
+        raise RuntimeError(f"Failed to load audio: {msg}") from exc
+
+
+def _detect_key_from_audio_data(y, sr):
+    """
+    Detect key from pre-loaded audio data (y, sr).
+    Used internally by analyze_track to avoid redundant disk I/O.
+    """
+    if not LIBROSA_AVAILABLE:
+        return {
+            "key": "Unknown - librosa not installed",
+            "camelot": "Unknown",
+            "confidence": 0.0,
+            "secondary_key": None,
+            "secondary_camelot": None,
+        }
+    try:
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+        chroma_mean = chroma.mean(axis=1)
+        key_name, confidence, all_scores = _best_key_from_chroma(chroma_mean)
+
+        from utils.camelot_map import get_camelot_key
+        camelot = get_camelot_key(key_name)
+        sorted_scores = sorted(all_scores.items(), key=lambda kv: kv[1], reverse=True)
+        secondary_key = sorted_scores[1][0] if len(sorted_scores) > 1 else None
+        secondary_camelot = get_camelot_key(secondary_key) if secondary_key else None
+        return {
+            "key": key_name,
+            "camelot": camelot,
+            "confidence": round(confidence, 3),
+            "secondary_key": secondary_key,
+            "secondary_camelot": secondary_camelot,
+        }
+    except Exception as e:
+        logger.error(f"Erro ao detectar tonalidade: {e}")
+        return {
+            "key": f"Erro ao detectar: {str(e)}",
+            "camelot": "Unknown",
+            "confidence": 0.0,
+            "secondary_key": None,
+            "secondary_camelot": None,
+        }
+
+
+def _detect_bpm_from_audio_data(y, sr):
+    """
+    Detect BPM from pre-loaded audio data (y, sr).
+    Used internally by analyze_track to avoid redundant disk I/O.
+    """
+    if not LIBROSA_AVAILABLE:
+        return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
+                "half_time_bpm": None, "double_time_bpm": None}
+    try:
+        import warnings
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                tempo_arr = librosa.feature.rhythm.tempo(y=y, sr=sr)
+            except AttributeError:
+                tempo_arr = librosa.beat.tempo(y=y, sr=sr)
+
+        if hasattr(tempo_arr, '__iter__'):
+            bpm = float(tempo_arr[0]) if len(tempo_arr) > 0 else None
+        else:
+            bpm = float(tempo_arr) if tempo_arr else None
+
+        if not bpm or bpm <= 0:
+            return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
+                    "half_time_bpm": None, "double_time_bpm": None}
+        bpm = round(bpm, 1)
+
+        try:
+            ac = librosa.autocorrelate(onset_env, max_size=sr // 2)
+            ac_norm = ac / (ac.max() + 1e-10)
+            confidence = float(ac_norm[1:].max())
+        except Exception:
+            confidence = 0.7
+
+        win_samples = int(10 * sr)
+        local_bpms = []
+        for start in range(0, len(y) - win_samples, win_samples):
+            seg = y[start:start + win_samples]
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    try:
+                        t = librosa.feature.rhythm.tempo(y=seg, sr=sr)
+                    except AttributeError:
+                        t = librosa.beat.tempo(y=seg, sr=sr)
+                local_bpms.append(float(t[0]) if hasattr(t, '__iter__') else float(t))
+            except Exception:
+                pass
+
+        variability = float(np.std(local_bpms) / (np.mean(local_bpms) + 1e-10) * 100) \
+            if len(local_bpms) > 1 else 0.0
+
+        return {
+            "bpm": bpm,
+            "bpm_confidence": round(min(confidence, 1.0), 3),
+            "bpm_variability": round(min(variability, 100.0), 1),
+            "half_time_bpm": round(bpm / 2, 1),
+            "double_time_bpm": round(bpm * 2, 1),
+        }
+    except Exception as e:
+        logger.error(f"Erro ao detectar BPM (de dados): {e}")
+        return {"bpm": None, "bpm_confidence": 0.0, "bpm_variability": 0.0,
+                "half_time_bpm": None, "double_time_bpm": None}
+
+
 def analyze_track(file_path):
     """
     Complete analysis of a track - key, BPM, energy, groove, mood, and modulations.
@@ -558,7 +685,8 @@ def analyze_track(file_path):
         }
 
     try:
-        y, sr = librosa.load(file_path, duration=60)
+        # ── Load audio ONCE — all sub-analyses reuse (y, sr) ─────────────────
+        y, sr = _load_audio_safe(file_path, duration=60)
         duration = librosa.get_duration(y=y, sr=sr)
 
         logger.info(f"🎵 Analisando: {file_path}")
@@ -566,7 +694,7 @@ def analyze_track(file_path):
 
         # ── Key detection (Krumhansl-Schmuckler) ──────────────────────────────
         logger.info(f"   🔍 Detectando tonalidade (Krumhansl-Schmuckler)...")
-        key_info = detect_key_from_audio(file_path)
+        key_info = _detect_key_from_audio_data(y, sr)
 
         # ── Modulation analysis ───────────────────────────────────────────────
         logger.info(f"   🔄 Analisando modulações...")
@@ -574,7 +702,7 @@ def analyze_track(file_path):
 
         # ── BPM (advanced) ────────────────────────────────────────────────────
         logger.info(f"   ⏱️  Detectando BPM (avançado)...")
-        bpm_info = detect_bpm_advanced(file_path)
+        bpm_info = _detect_bpm_from_audio_data(y, sr)
 
         # ── Energy ────────────────────────────────────────────────────────────
         logger.info(f"   ⚡ Detectando nível de energia...")

@@ -2,7 +2,10 @@
 # DJ Harmonic Analyzer — Installer & Launcher (Linux)
 # Abre o instalador gráfico PyQt5.
 
-cd "$(dirname "$0")"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 echo ""
 echo " ====================================================="
@@ -32,8 +35,7 @@ echo " Usando: $($PYTHON --version)"
 
 # ---- Bootstrap PyQt5 --------------------------------------------------------
 echo " A verificar PyQt5..."
-"$PYTHON" -c "import PyQt5" 2>/dev/null
-if [ $? -ne 0 ]; then
+if ! "$PYTHON" -c "import PyQt5" 2>/dev/null; then
     echo " Instalando PyQt5 para o instalador gráfico..."
     "$PYTHON" -m pip install "PyQt5>=5.15.0" --quiet
     if [ $? -ne 0 ]; then
@@ -43,7 +45,16 @@ if [ $? -ne 0 ]; then
     fi
 fi
 
+# ---- imageio-ffmpeg (necessário para MP3/AAC) --------------------------------
+echo " A verificar imageio-ffmpeg..."
+if ! "$PYTHON" -c "import imageio_ffmpeg" 2>/dev/null; then
+    echo " Instalando imageio-ffmpeg..."
+    "$PYTHON" -m pip install "imageio-ffmpeg>=0.5.0" --quiet || \
+        echo " [AVISO] Falha ao instalar imageio-ffmpeg. Análise de MP3/AAC pode falhar."
+fi
+
 # ---- Lançar installer GUI ---------------------------------------------------
 echo " Abrindo instalador..."
 echo ""
-exec "$PYTHON" "$(dirname "$0")/installer.py"
+exec "$PYTHON" "$SCRIPT_DIR/installer.py"
+
