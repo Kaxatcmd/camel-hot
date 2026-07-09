@@ -112,6 +112,17 @@ jobs:
           # Explicitly reinstall to guarantee the ffmpeg binary is present.
           # camel_hot.spec now fails the build if imageio_ffmpeg is not importable.
           pip install imageio-ffmpeg --force-reinstall
+
+      - name: Generate icon assets (includes macOS .icns via iconutil)
+        run: python3 tools/generate_icons.py
+
+      - name: Copy VLC native libs
+        run: bash build_macos/get_vlc_libs.sh
+
+      - name: Build .app and .dmg
+        run: bash build_macos/build.sh
+
+      - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
