@@ -275,7 +275,7 @@ if sys.platform == "darwin":
         bundle_identifier="com.kaxatcmd.camelhot",
         info_plist={
             "CFBundleShortVersionString": "2.1",
-            "CFBundleVersion": "2.1.0",
+            "CFBundleVersion": "2.1.1",
             "NSHighResolutionCapable": True,
             # 10.15 (Catalina) minimum — first macOS with notarization enforcement.
             # Older targets risk linking against removed APIs.

@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "camel-hot"
-version = "2.1.0"
+version = "2.1.1"
 description = "DJ Harmonic Analyzer — key detection, Camelot mapping, library organization and harmonic playlist generation"
 readme = "README.md"
 license = { file = "LICENSE" }

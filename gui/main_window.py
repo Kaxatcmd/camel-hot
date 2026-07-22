@@ -4123,14 +4123,22 @@ class DJAnalyzerGUI(QMainWindow):
         folder_row.addWidget(browse_in)
         card_layout.addLayout(folder_row)
 
-        # Output filename row
-        out_label = QLabel(self.translator.get('label_playlist_filename'))
+        # Output file path row
+        out_label = QLabel(self.translator.get('label_playlist_save_to'))
         out_label.setStyleSheet("font-weight: 700; color: #191414; font-size: 12px;")
         card_layout.addWidget(out_label)
         out_row = QHBoxLayout()
-        self.pl_output = QLineEdit("my_playlist.m3u")
+        self.pl_output = QLineEdit()
+        self.pl_output.setReadOnly(True)
+        self.pl_output.setPlaceholderText(self.translator.get('placeholder_playlist_output'))
         self.pl_output.setMinimumHeight(36)
         out_row.addWidget(self.pl_output)
+        browse_out = QPushButton(self.translator.get('btn_browse'))
+        browse_out.setMaximumWidth(110)
+        browse_out.setMinimumHeight(36)
+        browse_out.clicked.connect(self.browse_pl_output)
+        self._style_browse_button(browse_out)
+        out_row.addWidget(browse_out)
         card_layout.addLayout(out_row)
 
         # --- Filters: Direction, BPM, Energy, Groove, Limit ---
@@ -5036,6 +5044,105 @@ Made for DJs and music lovers!
         if folder:
             self.pl_input.setText(folder)
 
+    def browse_pl_output(self):
+        """Seleciona caminho de saída para guardar a playlist"""
+        d = QFileDialog(self)
+        d.setWindowTitle("Save Playlist As")
+        d.setAcceptMode(QFileDialog.AcceptSave)
+        d.setNameFilter("M3U Playlists (*.m3u);;All Files (*)")
+        d.setDefaultSuffix("m3u")
+        start_dir = self.pl_input.text() or str(Path.home())
+        d.setDirectory(start_dir)
+        d.selectFile("my_playlist.m3u")
+        if self._dark:
+            d.setStyleSheet("""
+                QFileDialog            { background: #2a2a2a; color: #E0E0E0; }
+                QWidget                { background: #2a2a2a; color: #E0E0E0; }
+                QPushButton            {
+                    background: #3a3a3a; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 4px;
+                    padding: 4px 12px; min-width: 64px; font-size: 11px;
+                }
+                QPushButton:hover      { background: #4a4a4a; border-color: #777; }
+                QPushButton:pressed    { background: #252525; }
+                QTreeView, QListView   {
+                    background: #222; color: #E0E0E0; border: 1px solid #444;
+                    outline: none;
+                }
+                QTreeView::item:selected,
+                QListView::item:selected   { background: #1565C0; color: #fff; }
+                QTreeView::item:hover,
+                QListView::item:hover      { background: #333; color: #E0E0E0; }
+                QHeaderView::section   {
+                    background: #3a3a3a; color: #E0E0E0;
+                    border: 1px solid #555; padding: 4px;
+                }
+                QLineEdit              {
+                    background: #333; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 4px; padding: 4px 8px;
+                }
+                QComboBox              {
+                    background: #333; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 4px; padding: 4px 8px;
+                }
+                QLabel                 { color: #E0E0E0; background: transparent; }
+                QToolBar               { background: #2a2a2a; border: none; }
+                QToolButton            {
+                    background: #3a3a3a; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 3px; padding: 3px;
+                }
+                QToolButton:hover      { background: #4a4a4a; }
+                QSplitter::handle      { background: #444; }
+                QScrollBar:vertical    { background: #2a2a2a; width: 10px; }
+                QScrollBar::handle:vertical { background: #555; border-radius: 4px; }
+            """)
+        else:
+            d.setStyleSheet("""
+                QFileDialog            { background: #f8f8f8; color: #222; }
+                QWidget                { background: #f8f8f8; color: #222; }
+                QPushButton            {
+                    background: #ebebeb; color: #222;
+                    border: 1px solid #ccc; border-radius: 4px;
+                    padding: 4px 12px; min-width: 64px; font-size: 11px;
+                }
+                QPushButton:hover      { background: #ddd; border-color: #aaa; }
+                QPushButton:pressed    { background: #c8c8c8; }
+                QTreeView, QListView   {
+                    background: #fff; color: #222; border: 1px solid #ccc;
+                    outline: none;
+                }
+                QTreeView::item:selected,
+                QListView::item:selected   { background: #4A90E2; color: #fff; }
+                QTreeView::item:hover,
+                QListView::item:hover      { background: #e8f0ff; color: #222; }
+                QHeaderView::section   {
+                    background: #ebebeb; color: #333;
+                    border: 1px solid #ccc; padding: 4px;
+                }
+                QLineEdit              {
+                    background: #fff; color: #222;
+                    border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px;
+                }
+                QComboBox              {
+                    background: #fff; color: #222;
+                    border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px;
+                }
+                QLabel                 { color: #222; background: transparent; }
+                QToolBar               { background: #ebebeb; border: none; }
+                QToolButton            {
+                    background: #ebebeb; color: #222;
+                    border: 1px solid #ccc; border-radius: 3px; padding: 3px;
+                }
+                QToolButton:hover      { background: #ddd; }
+                QSplitter::handle      { background: #ddd; }
+                QScrollBar:vertical    { background: #f0f0f0; width: 10px; }
+                QScrollBar::handle:vertical { background: #bbb; border-radius: 4px; }
+            """)
+        if d.exec_():
+            files = d.selectedFiles()
+            if files:
+                self.pl_output.setText(files[0])
+
     def browse_compat_file1(self):
         """Abre diálogo para selecionar primeiro arquivo"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -5530,7 +5637,8 @@ Made for DJs and music lovers!
         
         output_file = self.pl_output.text().strip()
         if not output_file:
-            output_file = "my_playlist.m3u"
+            QMessageBox.warning(self, "Aviso", "Selecione onde guardar a playlist!")
+            return
         if not output_file.endswith('.m3u'):
             output_file += '.m3u'
         
@@ -5855,7 +5963,7 @@ Made for DJs and music lovers!
     def clear_playlist_tab(self):
         """Limpa aba de playlist"""
         self.pl_input.clear()
-        self.pl_output.setText("minha_playlist.m3u")
+        self.pl_output.clear()
         self.pl_direction.setCurrentIndex(0)
         self.pl_bpm_min.setValue(0)
         self.pl_bpm_max.setValue(300)

@@ -37,6 +37,23 @@ if errorlevel 1 (
     pip install "soundfile>=0.12.0"
 )
 
+:: librosa MUST be installed — it is the core audio analysis engine
+python -c "import librosa" >nul 2>&1
+if errorlevel 1 (
+    echo     ERRO: librosa nao esta instalado.
+    echo     Sem isto, a analise de audio NAO funcionara no bundle.
+    echo     A instalar agora...
+    pip install "librosa>=0.10.0"
+    if errorlevel 1 (
+        echo     ERRO: Falha ao instalar librosa. Verifica a internet.
+        pause
+        exit /b 1
+    )
+    echo     librosa instalado.
+) else (
+    echo     librosa: OK
+)
+
 :: Generate icon assets (requires Pillow)
 echo.
 echo     Gerando icones...

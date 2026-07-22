@@ -1,5 +1,22 @@
 # 📋 CHANGELOG - DJ Harmonic Analyzer
 
+## [2.1.1] - 22 de Julho de 2026
+
+### 🐛 Correções
+
+#### Aba Playlist — Seletor de Caminho de Saída
+- **Problema:** A playlist gerada era sempre guardada na pasta raiz do projeto sem o utilizador poder escolher o destino.
+- **Solução:** Adicionado seletor de ficheiro na aba Playlist (idêntico ao padrão das outras abas), com botão "Browse" que abre um diálogo "Guardar Como" filtrado por `.m3u`. O campo é obrigatório — se não for preenchido, o botão de criar playlist avisa o utilizador em vez de guardar em local desconhecido.
+
+#### Windows Build — Verificação de Librosa em Falta
+- **Problema:** `build_windows/build.bat` verificava e auto-instalava `imageio-ffmpeg` e `soundfile` antes do PyInstaller, mas não verificava `librosa`. Numa máquina Windows sem `pip install -r requirements.txt` prévio, o bundle era gerado sem o motor de análise de áudio.
+- **Solução:** Adicionada verificação de `librosa` com auto-instalação e saída com erro em caso de falha, igual ao padrão já existente para `imageio-ffmpeg`.
+
+### 🌐 Traduções
+- Adicionadas chaves `label_playlist_save_to` e `placeholder_playlist_output` em EN/PT/ES para o novo seletor de caminho da playlist.
+
+---
+
 ## [2.0.0] - 26 de Janeiro de 2026
 
 ### 🎉 Grandes Mudanças

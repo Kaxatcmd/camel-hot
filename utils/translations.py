@@ -222,6 +222,16 @@ class Translator:
             'PT': 'Nome do arquivo playlist:',
             'ES': 'Nombre de archivo de lista:'
         },
+        'label_playlist_save_to': {
+            'ENG': 'Save playlist to:',
+            'PT': 'Salvar playlist em:',
+            'ES': 'Guardar lista en:'
+        },
+        'placeholder_playlist_output': {
+            'ENG': 'Choose where to save the playlist...',
+            'PT': 'Escolha onde salvar a playlist...',
+            'ES': 'Elige dónde guardar la lista...'
+        },
         'label_options': {
             'ENG': 'Options (depends on mode):',
             'PT': 'Opções (depende do modo):',
