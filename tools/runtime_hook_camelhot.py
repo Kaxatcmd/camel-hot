@@ -5,7 +5,8 @@ import os
 import sys
 import glob
 
-os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
+# librosa relies on Numba-dispatched functions at runtime.  Disabling JIT turns
+# those dispatchers into regular functions and breaks audio loading in frozen builds.
 os.environ.setdefault('NUMBA_DISABLE_CUDA', '1')
 os.environ.setdefault(
     'NUMBA_CACHE_DIR',

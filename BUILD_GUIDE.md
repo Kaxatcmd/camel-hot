@@ -48,6 +48,9 @@ Este comando cria todos os assets necessários em `assets/`:
 | create-dmg | qualquer | `brew install create-dmg` |
 | VLC Media Player | 3.0+ | `brew install --cask vlc` ou https://www.videolan.org/vlc/download-macosx.html |
 
+O bundle suporta macOS 10.15 ou posterior. Gere em Apple Silicon para `arm64`,
+em Intel para `x86_64`, ou use `ARCH=universal2` com dependências universais.
+
 ### Linux
 
 | Ferramenta | Versão mínima | Instalação |
@@ -122,7 +125,16 @@ Copia `libvlc.dylib`, `libvlccore.dylib` e `plugins/` de `/Applications/VLC.app`
 bash build_macos/build.sh
 ```
 
-O script gera os ícones, corre o PyInstaller e cria o `.dmg` com `create-dmg`.
+O script gera os ícones, corre o PyInstaller, executa o smoke test de análise e
+cria o `.dmg` com `create-dmg`. Para uma release pública assinada e notarizada:
+
+```bash
+export MACOS_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export APPLE_ID="release@example.com"
+export APPLE_TEAM_ID="TEAMID"
+export APPLE_APP_PASSWORD="app-specific-password"
+ARCH=universal2 bash build_macos/build.sh
+```
 
 ### 4. Output
 
@@ -192,7 +204,13 @@ git push origin v2.0.0
 
 A pipeline corre automaticamente e:
 1. Compila para Windows, macOS e Linux em paralelo
-2. Cria uma GitHub Release com os três artefactos
+2. Executa `--smoke-test` no executável congelado em cada plataforma
+3. Exige assinatura e notarização macOS para releases por tag
+4. Cria uma GitHub Release com os três artefactos
+
+Configure os secrets `MACOS_CODESIGN_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID` e
+`APPLE_APP_PASSWORD` antes de publicar uma tag. Um disparo manual pode produzir
+um DMG não assinado apenas para testes internos.
 
 ### Artefactos por plataforma
 
@@ -215,15 +233,18 @@ Podes activar a pipeline manualmente via GitHub Actions → "Release Build" → 
 - Verificar que o branding aparece no instalador (logo no painel esquerdo)
 - Verificar que a app abre e consegue analisar um ficheiro de áudio
 - Verificar que o VLC reproduz o áudio
+- Executar `dist\CamelHot\CamelHot.exe --smoke-test` antes de criar o instalador
 
 ### macOS
 - Copiar `CamelHot.dmg` para outro Mac (diferente do Mac de build)
 - Abrir o `.dmg`, arrastar para `/Applications`, lançar
-- Se aparecer aviso de segurança: `xattr -dr com.apple.quarantine /Applications/CamelHot.app`
+- Verificar assinatura e Gatekeeper: `spctl --assess --type execute --verbose=4 /Applications/CamelHot.app`
+- Executar `dist/CamelHot.app/Contents/MacOS/CamelHot --smoke-test`
 
 ### Linux
 - Copiar o `.AppImage` para outra máquina Linux (sem Python instalado)
 - `chmod +x CamelHot-x86_64.AppImage && ./CamelHot-x86_64.AppImage`
+- `APPIMAGE_EXTRACT_AND_RUN=1 ./CamelHot-x86_64.AppImage --smoke-test`
 
 ---
 
@@ -290,8 +311,8 @@ camel-hot/
 - Confirmar que o VLC instalado tem a mesma arquitectura (64-bit) da app
 
 ### App não arranca no macOS ("app danificada")
-- `xattr -dr com.apple.quarantine /Applications/CamelHot.app`
-- Ou: **Preferências do Sistema → Segurança e Privacidade → Permitir mesmo assim**
+- Confirmar que a release foi assinada e notarizada com `spctl --assess --type execute --verbose=4 /Applications/CamelHot.app`
+- Não distribua um DMG sem assinatura/notarização; configure os secrets de release indicados acima e volte a gerar o artefacto.
 
 ### App não arranca no Windows ("DLL não encontrada")
 - Instalar os Visual C++ Redistributable: https://aka.ms/vs/17/release/vc_redist.x64.exe
@@ -320,6 +341,6 @@ Para distribuição pública sem avisos de segurança:
 - **Windows:** Assinar `CamelHot.exe` com um certificado Code Signing (EV ou OV)
 - **macOS:** Assinar com Apple Developer ID + Notarização (`xcrun notarytool`)
 
-Estes passos estão fora do âmbito deste guia mas são necessários para distribuição
-na App Store ou via download directo sem avisos do Gatekeeper/SmartScreen.
+O build macOS executa estes passos quando as variáveis de ambiente de assinatura
+estão configuradas. Releases de tag falham deliberadamente sem essas credenciais.
 

@@ -34,6 +34,9 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "[0/6] Verificando dependências de build..."
 
+python3 -c "import numpy, scipy, numba, llvmlite, soundfile, audioread, imageio_ffmpeg, librosa"
+echo "    Runtime científico: OK"
+
 # imageio-ffmpeg is required — abort if missing
 if ! python3 -c "import imageio_ffmpeg" 2>/dev/null; then
     echo "    ERRO: imageio-ffmpeg não está instalado."
@@ -128,6 +131,8 @@ if [ ! -d "dist/CamelHot.app" ]; then
     exit 1
 fi
 echo "    OK — dist/CamelHot.app criado."
+"dist/CamelHot.app/Contents/MacOS/CamelHot" --smoke-test
+echo "    OK — runtime de análise empacotado validado."
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -137,6 +142,38 @@ echo "[5/6] A remover atributo de quarentena do Gatekeeper..."
 xattr -dr com.apple.quarantine "dist/CamelHot.app" 2>/dev/null && \
     echo "    Quarentena removida." || \
     echo "    Nenhum atributo de quarentena encontrado (OK)."
+echo ""
+
+if [ -n "${MACOS_CODESIGN_IDENTITY:-}" ]; then
+    echo "    A assinar a aplicação..."
+    codesign --force --deep --options runtime --timestamp \
+        --sign "${MACOS_CODESIGN_IDENTITY}" "dist/CamelHot.app"
+    codesign --verify --deep --strict --verbose=2 "dist/CamelHot.app"
+    echo "    Assinatura validada."
+
+    if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+        echo "    A submeter para notarização..."
+        NOTARIZATION_ZIP="dist/CamelHot-notarization.zip"
+        rm -f "${NOTARIZATION_ZIP}"
+        ditto -c -k --keepParent "dist/CamelHot.app" "${NOTARIZATION_ZIP}"
+        xcrun notarytool submit "${NOTARIZATION_ZIP}" --wait \
+            --apple-id "${APPLE_ID}" --team-id "${APPLE_TEAM_ID}" --password "${APPLE_APP_PASSWORD}"
+        xcrun stapler staple "dist/CamelHot.app"
+        spctl --assess --type execute --verbose=4 "dist/CamelHot.app"
+        rm -f "${NOTARIZATION_ZIP}"
+        echo "    Notarização validada."
+    else
+        echo "    AVISO: Credenciais de notarização ausentes; artefacto não será distribuível via Gatekeeper."
+        if [ "${REQUIRE_MACOS_NOTARIZATION:-false}" = "true" ]; then
+            exit 1
+        fi
+    fi
+else
+    echo "    AVISO: MACOS_CODESIGN_IDENTITY não definida; artefacto não assinado."
+    if [ "${REQUIRE_MACOS_NOTARIZATION:-false}" = "true" ]; then
+        exit 1
+    fi
+fi
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -151,8 +188,7 @@ if [ "${CREATE_DMG_AVAILABLE:-true}" = "false" ]; then
     echo "  Build concluído (sem .dmg)."
     echo "  App em: dist/CamelHot.app"
     echo ""
-    echo "  NOTA: Para distribuição sem assinatura, instrui os utilizadores"
-    echo "  a clicarem com o botão direito → Abrir, na primeira execução."
+    echo "  NOTA: Define MACOS_CODESIGN_IDENTITY e credenciais Apple para distribuição."
     echo "============================================================"
     exit 0
 fi
@@ -188,9 +224,7 @@ echo "  Build concluído com sucesso!"
 echo "  Ficheiro: dist/CamelHot.dmg  (${DMG_SIZE})"
 echo ""
 echo "  DISTRIBUIÇÃO:"
-echo "  - Os utilizadores devem clique direito → Abrir na 1.ª execução"
-echo "    (Gatekeeper bloqueia apps não assinadas por defeito)"
-echo "  - Para assinar: codesign --deep --sign 'Developer ID' dist/CamelHot.app"
+echo "  - Releases públicas devem definir MACOS_CODESIGN_IDENTITY e credenciais Apple."
 echo "  - Para build universal (Intel+ARM): ARCH=universal2 bash $0"
 echo "============================================================"
 

@@ -5,7 +5,7 @@
 ; ============================================================
 
 #define AppName    "CAMEL-HOT"
-#define AppVersion "2.1.0"
+#define AppVersion "2.1.1"
 #define AppPublisher "Kaxatcmd"
 #define AppExeName "CamelHot.exe"
 #define AppURL     "https://github.com/Kaxatcmd/camel-hot"

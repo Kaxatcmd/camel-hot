@@ -22,14 +22,16 @@ try:
     import librosa
     import numpy as np
     LIBROSA_AVAILABLE = True
-except ImportError:
+    LIBROSA_IMPORT_ERROR = None
+except Exception as exc:
     LIBROSA_AVAILABLE = False
+    LIBROSA_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 import logging
 logger = logging.getLogger(__name__)
 
 if not LIBROSA_AVAILABLE:
-    logger.info("Tip: Install librosa for audio analysis with 'pip install librosa'")
+    logger.error("Audio analysis is unavailable because librosa could not load: %s", LIBROSA_IMPORT_ERROR)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -681,7 +683,7 @@ def analyze_track(file_path):
             "camelot": "Unknown",
             "bpm": None,
             "duration": None,
-            "error": "Install librosa: pip install librosa"
+            "error": f"Audio analysis runtime unavailable: {LIBROSA_IMPORT_ERROR}"
         }
 
     try:

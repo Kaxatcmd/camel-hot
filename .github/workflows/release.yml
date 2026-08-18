@@ -42,7 +42,6 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller Pillow
           pip install soundfile imageio-ffmpeg --force-reinstall
-          pip uninstall numba llvmlite -y || echo "numba not installed, skipping"
 
       - name: Generate icon assets
         run: python tools/generate_icons.py
@@ -65,6 +64,7 @@ jobs:
             exit 1
           )
           echo OK - dist\CamelHot\CamelHot.exe exists
+          dist\CamelHot\CamelHot.exe --smoke-test
         shell: cmd
 
       - name: Install Inno Setup 6
@@ -89,6 +89,11 @@ jobs:
   build-macos:
     name: Build macOS DMG
     runs-on: macos-latest
+    env:
+      MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
@@ -120,6 +125,8 @@ jobs:
         run: bash build_macos/get_vlc_libs.sh
 
       - name: Build .app and .dmg
+        env:
+          REQUIRE_MACOS_NOTARIZATION: ${{ github.event_name == 'push' }}
         run: bash build_macos/build.sh
 
       - name: Upload macOS DMG artifact
@@ -235,19 +242,13 @@ jobs:
             | Platform | File | Notes |
             |---|---|---|
             | 🪟 Windows 10/11 (64-bit) | `CamelHot_Setup.exe` | Installer wizard — double-click to install |
-            | 🍎 macOS 10.13+ | `CamelHot.dmg` | Open DMG, drag to Applications |
+            | 🍎 macOS 10.15+ | `CamelHot.dmg` | Signed and notarized; open DMG, drag to Applications |
             | 🐧 Linux x86_64 | `CamelHot-x86_64.AppImage` | `chmod +x`, then run directly |
 
             ### Linux quick start
             ```bash
             chmod +x CamelHot-x86_64.AppImage
             ./CamelHot-x86_64.AppImage
-            ```
-
-            ### macOS security note
-            If macOS Gatekeeper blocks the app, run once in Terminal:
-            ```bash
-            xattr -dr com.apple.quarantine /Applications/CamelHot.app
             ```
 
             ---

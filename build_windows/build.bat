@@ -13,6 +13,18 @@ echo.
 echo [0/5] Verificando dependencias de build...
 cd /d "%~dp0.."
 
+python -c "import numpy, scipy, numba, llvmlite, soundfile, audioread, imageio_ffmpeg, librosa" >nul 2>&1
+if errorlevel 1 (
+    echo     ERRO: A cadeia de analise cientifica esta incompleta.
+    echo     A instalar dependencias declaradas...
+    pip install -r requirements.txt
+    if errorlevel 1 (
+        echo     ERRO: Falha ao instalar dependencias de analise.
+        pause
+        exit /b 1
+    )
+)
+
 :: imageio-ffmpeg MUST be installed before building
 python -c "import imageio_ffmpeg" >nul 2>&1
 if errorlevel 1 (
@@ -118,6 +130,13 @@ echo.
 echo [4/5] A verificar output...
 if exist "%DIST_DIR%\CamelHot\CamelHot.exe" (
     echo     OK — dist\CamelHot\CamelHot.exe encontrado.
+    "%DIST_DIR%\CamelHot\CamelHot.exe" --smoke-test
+    if errorlevel 1 (
+        echo     ERRO: Smoke test do runtime empacotado falhou.
+        pause
+        exit /b 1
+    )
+    echo     OK — runtime de analise empacotado validado.
 ) else (
     echo     ERRO: dist\CamelHot\CamelHot.exe NAO encontrado.
     echo     Verifica os erros do PyInstaller acima.

@@ -12,20 +12,38 @@ import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Collect soundfile native libs (libsndfile DLL/SO) and librosa data files.
-# These are not auto-detected by PyInstaller but are required at runtime.
+# Collect Python packages with native extensions and data files explicitly.
+# PyInstaller's automatic analysis can miss lazy imports and native libraries
+# from the librosa/numba stack, especially on Windows and macOS.
 # ---------------------------------------------------------------------------
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
-# soundfile: gets _soundfile.pyd + libsndfile64bit.dll (Windows) or .so (Linux/macOS)
-_sf_datas, _sf_binaries, _sf_hiddenimports = collect_all('soundfile')
+_critical_packages = (
+    'librosa', 'numpy', 'scipy', 'numba', 'llvmlite', 'sklearn',
+    'soundfile', 'audioread', 'imageio_ffmpeg', 'matplotlib', 'PyQt5',
+)
+_critical_datas = []
+_critical_binaries = []
+_critical_hiddenimports = []
+for _package in _critical_packages:
+    try:
+        _datas, _binaries, _hiddenimports = collect_all(_package)
+    except Exception as _collection_exc:
+        print(f"ERROR: Could not collect required package '{_package}': {_collection_exc}")
+        raise
+    _critical_datas.extend(_datas)
+    _critical_binaries.extend(_binaries)
+    _critical_hiddenimports.extend(_hiddenimports)
+
+# Backward-compatible aliases used by the existing build configuration.
+_sf_datas = _sf_binaries = _sf_hiddenimports = []
 
 # imageio-ffmpeg: ships a static ffmpeg binary — needed for MP3/AAC/m4a decoding
 try:
     import importlib.util as _ilu
     if _ilu.find_spec('imageio_ffmpeg') is None:
         raise ImportError("imageio_ffmpeg not installed")
-    _iff_datas, _iff_binaries, _iff_hiddenimports = collect_all('imageio_ffmpeg')
+    _iff_datas, _iff_binaries, _iff_hiddenimports = [], [], []
 except Exception as _iff_exc:
     print(f"ERROR: imageio_ffmpeg collection failed: {_iff_exc}")
     print("ERROR: MP3/AAC decoding WILL BE BROKEN in the frozen bundle.")
@@ -119,7 +137,7 @@ added_datas = [
     ("audio_analysis/", "audio_analysis"),
     ("config.py", "."),
     ("logging_config.py", "."),
-] + _sf_datas + _lr_datas + _iff_datas
+] + _critical_datas + _lr_datas
 
 # Windows-specific: explicitly bundle libsndfile64bit.dll inside _soundfile_data/
 # collect_all('soundfile') should already include this, but we add it explicitly
@@ -202,7 +220,7 @@ hidden_imports = [
     # PyQt5 extras used by the app
     "PyQt5.QtSvg",
     "PyQt5.QtPrintSupport",
-] + _sf_hiddenimports + _iff_hiddenimports
+] + _critical_hiddenimports
 
 # ---------------------------------------------------------------------------
 # Modules to exclude (reduces bundle size — only safe exclusions)
@@ -222,7 +240,7 @@ excludes = [
 a = Analysis(
     ["main.py"],
     pathex=[str(SPEC_DIR)],
-    binaries=vlc_binaries + _sf_binaries + _iff_binaries,
+    binaries=vlc_binaries + _critical_binaries,
     datas=added_datas,
     hiddenimports=hidden_imports,
     hookspath=[],

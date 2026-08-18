@@ -3,6 +3,10 @@
 
 # Core audio analysis
 librosa>=0.10.0        # Key and BPM detection (installs numpy, scipy, scikit-learn, etc.)
+numpy>=1.20.0          # Explicit runtime dependency for frozen builds
+scipy>=1.6.0           # Explicit runtime dependency for frozen builds
+numba>=0.56.0          # Required by librosa's accelerated core
+llvmlite>=0.39.0       # Native runtime required by numba
 audioread>=3.0.0       # Multi-backend audio loader used by librosa
 soundfile>=0.12.0      # WAV/FLAC I/O; bundles libsndfile (includes DLL on Windows)
 

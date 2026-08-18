@@ -22,6 +22,11 @@ echo "[1/6] Gerando ícones..."
 python3 tools/generate_icons.py
 echo ""
 
+echo "[0/6] Verificando dependências de análise..."
+python3 -c "import numpy, scipy, numba, llvmlite, soundfile, audioread, imageio_ffmpeg, librosa"
+echo "    Runtime científico: OK"
+echo ""
+
 # ---------------------------------------------------------------------------
 # Step 2 — Verify / install PyInstaller
 # ---------------------------------------------------------------------------
@@ -56,6 +61,8 @@ if [ ! -f "dist/CamelHot/CamelHot" ]; then
     exit 1
 fi
 echo "    OK — dist/CamelHot/ criado."
+dist/CamelHot/CamelHot --smoke-test
+echo "    OK — runtime de análise empacotado validado."
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -122,6 +129,9 @@ if [ ! -f "dist/CamelHot-x86_64.AppImage" ]; then
     echo "    ERRO: dist/CamelHot-x86_64.AppImage não foi criado."
     exit 1
 fi
+
+APPIMAGE_EXTRACT_AND_RUN=1 dist/CamelHot-x86_64.AppImage --smoke-test
+echo "    OK — runtime AppImage validado."
 
 SIZE=$(du -sh "dist/CamelHot-x86_64.AppImage" | cut -f1)
 

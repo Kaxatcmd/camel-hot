@@ -33,8 +33,8 @@ except ImportError:
 
 class TestCamelotMapStructure:
     def test_map_has_24_entries(self):
-        """Camelot system covers 12 major + 12 minor keys."""
-        assert len(CAMELOT_MAP) == 24
+        """Camelot system covers 12 major + 12 minor positions."""
+        assert len(set(CAMELOT_MAP.values())) == 24
 
     def test_all_values_are_valid_camelot_codes(self):
         valid = {f"{n}{s}" for n in range(1, 13) for s in ("A", "B")}

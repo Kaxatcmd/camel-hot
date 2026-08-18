@@ -80,6 +80,16 @@ Or use the convenience script (activates venv, checks deps, launches GUI):
 ./run.sh
 ```
 
+## Standalone Releases
+
+The Windows installer, macOS DMG, and Linux AppImage bundle Python and the
+audio-analysis runtime, including `numba`, `llvmlite`, `libsndfile`, and the
+`imageio-ffmpeg` decoder. Each release build runs `--smoke-test`, which imports
+the runtime and analyzes a temporary WAV before publishing an artifact.
+
+Build and release validation instructions, platform architecture targets, and
+macOS signing/notarization configuration are in [BUILD_GUIDE.md](BUILD_GUIDE.md).
+
 ---
 
 ## Usage
