@@ -2,7 +2,7 @@
 
 > Analyze audio files, detect musical keys and BPM, organize your library by Camelot notation, and generate harmonic mixing playlists — all from a clean PyQt5 desktop GUI.
 
-[![CI](https://github.com/your-username/camel-hot/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/camel-hot/actions/workflows/ci.yml)
+[![CI](https://github.com/Kaxatcmd/camel-hot/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaxatcmd/camel-hot/actions/workflows/ci.yml)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green.svg)](https://pypi.org/project/PyQt5/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -54,7 +54,7 @@
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-username/camel-hot.git
+git clone https://github.com/Kaxatcmd/camel-hot.git
 cd camel-hot
 
 # 2. Create and activate a virtual environment
@@ -157,7 +157,18 @@ camel-hot/
 │   ├── ARCHITECTURE.md
 │   ├── CAMELOT_SYSTEM.md
 │   ├── CONFIGURATION.md
-│   └── CONTRIBUTING.md
+│   ├── CONTRIBUTING.md
+│   ├── guides/
+│   │   └── DJ_MIXING_GUIDE.md
+│   └── history/
+│       ├── README.md
+│       ├── HARMONIC_FEATURES_GUIDE.md
+│       ├── NEW_FEATURES_GUIDE.md
+│       ├── QUICK_REFERENCE.txt
+│       ├── QUICK_START_ENGINE.md
+│       ├── README_TRANSITION_ENGINE.md
+│       ├── TODO.md
+│       └── TRANSITION_ENGINE_GUIDE.md
 │
 └── assets/                      # Images used by the GUI
 ```
