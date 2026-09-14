@@ -82,13 +82,31 @@ Or use the convenience script (activates venv, checks deps, launches GUI):
 
 ## Standalone Releases
 
-The Windows installer, macOS DMG, and Linux AppImage bundle Python and the
-audio-analysis runtime, including `numba`, `llvmlite`, `libsndfile`, and the
-`imageio-ffmpeg` decoder. Each release build runs `--smoke-test`, which imports
-the runtime and analyzes a temporary WAV before publishing an artifact.
+Download the current installers from [GitHub Releases](https://github.com/Kaxatcmd/camel-hot/releases).
 
-Build and release validation instructions, platform architecture targets, and
-macOS signing/notarization configuration are in [BUILD_GUIDE.md](BUILD_GUIDE.md).
+Stable releases are the recommended downloads. Pre-releases are preview builds and may ship with fewer platform artifacts. Build and release validation instructions, platform architecture targets, and macOS signing/notarization configuration are in [BUILD_GUIDE.md](BUILD_GUIDE.md).
+
+Current published releases:
+
+| Release | Status | Windows | Linux | macOS |
+|---|---|---|---|---|
+| v2.1.1 | Stable | CamelHot_Setup.exe | CamelHot-x86_64.AppImage | CamelHot.dmg |
+| v2.1.2-rc.1 | Pre-release | CamelHot_Setup.exe | CamelHot-x86_64.AppImage | not published |
+
+macOS DMG downloads are only presented as public releases when they are signed and notarized.
+
+## Feedback
+
+If you run into a bug, please open a [bug report](../../issues/new?template=bug_report.yml). If you have an idea for a new feature, use a [feature request](../../issues/new?template=feature_request.yml).
+
+For audio-related bug reports, include:
+- the app version;
+- your operating system;
+- the audio file format;
+- the output device or playback setup;
+- the exact steps to reproduce.
+
+Pre-releases are preview builds. They may ship with fewer platform artifacts and may change before the next stable release. Please use them for testing and feedback, not as a guarantee of full platform coverage.
 
 ---
 

@@ -4,7 +4,6 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Project Structure](#project-structure)
 - [Development Workflow](#development-workflow)
@@ -12,12 +11,6 @@ Thank you for your interest in contributing! This guide covers everything you ne
 - [Testing](#testing)
 - [Submitting Changes](#submitting-changes)
 - [Architecture Notes](#architecture-notes)
-
----
-
-## Code of Conduct
-
-Be respectful and constructive. Contributions of all skill levels are welcome.
 
 ---
 
