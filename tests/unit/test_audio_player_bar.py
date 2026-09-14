@@ -130,6 +130,35 @@ def _showoff_plan():
     }
 
 
+def test_showoff_sequences_tracks_before_starting_crossfade(player_bar):
+    bar, fake_vlc, _ = player_bar
+    plan = _showoff_plan()
+    bar.load_tracks("first.mp3", "second.mp3")
+
+    bar.execute_showoff(plan)
+    generation = bar._showoff_generation
+    assert fake_vlc.events == [
+        "instance0.player0.stop", "instance0.player1.stop",
+        "instance0.player0.rate.1.0", "instance0.player1.rate.1.0",
+        "instance0.player0.volume.100", "instance0.player0.play",
+    ]
+
+    bar._showoff_seek_track1(generation)
+    assert fake_vlc.events[-1] == "instance0.player0.position.0.75"
+    assert bar._cf_timer is None
+
+    bar._showoff_start_track2(generation)
+    assert fake_vlc.events[-2:] == [
+        "instance0.player1.volume.0", "instance0.player1.play"
+    ]
+    assert bar._cf_timer is None
+
+    bar._showoff_seek_track2(generation)
+    assert fake_vlc.events[-1] == "instance0.player1.position.0.1"
+    assert bar._cf_timer is not None
+    assert bar._cf_timer.isActive()
+
+
 def test_native_vlc_import_failure_disables_internal_player(monkeypatch, caplog):
     app = QApplication.instance() or QApplication([])
     original_import = builtins.__import__

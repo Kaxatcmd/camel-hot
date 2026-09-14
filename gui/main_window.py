@@ -1841,7 +1841,7 @@ class AudioPlayerBar(QWidget):
         except Exception:
             self._report_vlc_error("start Showoff")
 
-    def _showoff_seek_track2(self, generation=None):
+    def _showoff_seek_track1(self, generation=None):
         """Phase 2b \u2014 Seek Track 1 to exit point after VLC buffer delay."""
         if not self._is_current_showoff(generation):
             return
@@ -1854,7 +1854,7 @@ class AudioPlayerBar(QWidget):
                 f"({exit_ratio:.0%}) \u2014 queuing Track 2\u2026"
             )
         except Exception:
-            self._report_vlc_error("seek Showoff Track 2", 1)
+            self._report_vlc_error("seek Showoff Track 1", 0)
             return
         # Phase 3 \u2014 Start Track 2 at entry_ratio after another buffer delay
         self._schedule_showoff_callback(
@@ -1884,7 +1884,7 @@ class AudioPlayerBar(QWidget):
         except Exception as e:
             self.status_lbl.setText(f"Track 2 start error: {e}")
 
-    def _showoff_seek_track1(self, generation=None):
+    def _showoff_seek_track2(self, generation=None):
         """Phase 3b \u2014 Seek Track 2 to entry point, then start crossfade timer."""
         if not self._is_current_showoff(generation):
             return
@@ -1894,7 +1894,7 @@ class AudioPlayerBar(QWidget):
             p1.set_position(entry_ratio)
             self.status_lbl.setText("\U0001f42b Showoff! \u2014 Crossfading\u2026")
         except Exception:
-            self._report_vlc_error("seek Showoff Track 1", 0)
+            self._report_vlc_error("seek Showoff Track 2", 1)
             return
         # Phase 4 \u2014 Start crossfade timer
         crossfade_ms = max(1000, self._cf_plan['crossfade_sec'] * 1000)
