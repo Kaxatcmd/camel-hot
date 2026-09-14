@@ -10,7 +10,9 @@ import os
 import re
 import time
 import subprocess
+import logging
 from pathlib import Path
+from typing import Callable, Optional
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QPushButton, QLabel, QLineEdit, QFileDialog, QTextEdit,
@@ -34,12 +36,22 @@ from utils.transition_scoring import calculate_transition_score
 from utils.translations import Translator
 from utils.dj_tips import DJTipsManager
 
-try:
-    import vlc as _vlc
-    VLC_AVAILABLE = True
-except ImportError:
-    _vlc = None
-    VLC_AVAILABLE = False
+logger = logging.getLogger(__name__)
+VLC_UNAVAILABLE_MESSAGE = "VLC native library unavailable - internal player disabled"
+VLC_UNAVAILABLE_TOOLTIP = "VLC native library unavailable. Install VLC Media Player to enable playback."
+
+
+def _load_vlc():
+    try:
+        import vlc
+        return vlc
+    except (ImportError, OSError, NotImplementedError):
+        logger.warning("VLC playback unavailable; internal player disabled", exc_info=True)
+        return None
+
+
+_vlc = _load_vlc()
+VLC_AVAILABLE = _vlc is not None
 
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -1413,11 +1425,20 @@ class AudioPlayerBar(QWidget):
         super().__init__(parent)
         self._dark = dark
         self._players = [None, None]       # vlc.MediaPlayer for track 0 and track 1
+        self._vlc_instance: Optional[object] = None
         self._file_paths = [None, None]
         self._playing = [False, False]
         self._durations = [0, 0]
         self._showoff_enabled = False
         self._showoff_callback = None
+        self._showoff_generation = 0
+        self._showoff_timers = []
+        self._cf_timer = None
+        self._cf_plan = None
+        self._cf_player0 = None
+        self._cf_player1 = None
+        self._cf_step = 0
+        self._cf_steps = 40
 
         self._build_ui()
         self._apply_theme()
@@ -1513,27 +1534,30 @@ class AudioPlayerBar(QWidget):
         if not VLC_AVAILABLE:
             for btn in (self.btn_play1, self.btn_play2, self.btn_stop, self.btn_showoff):
                 btn.setEnabled(False)
-                btn.setToolTip("python-vlc not installed \u2014 run: pip install python-vlc")
-            self.status_lbl.setText("\u26a0 python-vlc not installed")
+                btn.setToolTip(VLC_UNAVAILABLE_TOOLTIP)
+            self.status_lbl.setText(VLC_UNAVAILABLE_MESSAGE)
 
     # \u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     def load_tracks(self, file1, file2):
         """Call after transition analysis to load both tracks into VLC."""
+        self._cleanup(release_resources=True)
         self._file_paths = [file1, file2]
-        self.stop_all()
         if not VLC_AVAILABLE:
+            self.status_lbl.setText(VLC_UNAVAILABLE_MESSAGE)
             return
         for i, path in enumerate([file1, file2]):
             if path:
                 try:
-                    instance = _vlc.Instance('--no-xlib', '--quiet')
-                    player = instance.media_player_new()
-                    media = instance.media_new(path)
+                    if self._vlc_instance is None:
+                        self._vlc_instance = _vlc.Instance('--no-xlib', '--quiet')
+                    player = self._vlc_instance.media_player_new()
+                    media = self._vlc_instance.media_new(path)
                     player.set_media(media)
                     self._players[i] = player
                     self._playing[i] = False
                 except Exception:
+                    logger.exception("Unable to load VLC player for Track %d", i + 1)
                     self._players[i] = None
         self.btn_play1.setEnabled(self._players[0] is not None)
         self.btn_seek1_back.setEnabled(self._players[0] is not None)
@@ -1555,13 +1579,116 @@ class AudioPlayerBar(QWidget):
 
     def stop_all(self):
         """Stop both tracks."""
-        for i in range(2):
-            if self._players[i] is not None:
+        self._cleanup(release_resources=False)
+        self.btn_play1.setText("\u25b6  Track 1")
+        self.btn_play2.setText("\u25b6  Track 2")
+        self.status_lbl.setText("Stopped")
+
+    def shutdown(self) -> None:
+        """Cancel playback work and release the VLC resources owned by this bar."""
+        self._cleanup(release_resources=True)
+        self._pos_timer.stop()
+
+    def closeEvent(self, event) -> None:
+        self.shutdown()
+        super().closeEvent(event)
+
+    def _schedule_showoff_callback(
+        self, delay_ms: int, generation: int, callback: Callable[[int], None]
+    ) -> None:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+
+        def run_callback() -> None:
+            if timer in self._showoff_timers:
+                self._showoff_timers.remove(timer)
+            if generation == self._showoff_generation:
+                callback(generation)
+            timer.deleteLater()
+
+        timer.timeout.connect(run_callback)
+        self._showoff_timers.append(timer)
+        timer.start(delay_ms)
+
+    def _is_current_showoff(self, generation: Optional[int]) -> bool:
+        return (
+            generation == self._showoff_generation
+            and self._cf_player0 is self._players[0]
+            and self._cf_player1 is self._players[1]
+        )
+
+    def _play_player(self, track_idx: int, player) -> bool:
+        try:
+            result = player.play()
+        except Exception:
+            self._report_vlc_error("start playback", track_idx)
+            return False
+        if result == -1:
+            logger.error("VLC rejected playback for Track %d (play() returned -1)", track_idx + 1)
+            self._set_playback_failed(track_idx, "VLC could not start playback")
+            return False
+        try:
+            if player.get_state() == _vlc.State.Error:
+                logger.error("VLC entered an error state while starting Track %d", track_idx + 1)
+                self._set_playback_failed(track_idx, "VLC entered an error state")
+                return False
+        except Exception:
+            self._report_vlc_error("check playback state", track_idx)
+            return False
+        return True
+
+    def _set_playback_failed(self, track_idx: int, message: str) -> None:
+        self._playing[track_idx] = False
+        button = self.btn_play1 if track_idx == 0 else self.btn_play2
+        button.setText(f"\u25b6  Track {track_idx + 1}")
+        self.status_lbl.setText(f"Playback error - Track {track_idx + 1}: {message}")
+
+    def _report_vlc_error(self, action: str, track_idx: Optional[int] = None) -> None:
+        track_label = "" if track_idx is None else f" for Track {track_idx + 1}"
+        logger.exception("VLC failed to %s%s", action, track_label)
+        if track_idx is None:
+            self.status_lbl.setText(f"Playback error - unable to {action}")
+        else:
+            self._set_playback_failed(track_idx, f"unable to {action}")
+
+    def _cleanup(self, release_resources: bool) -> None:
+        """Invalidate transition callbacks, stop playback, and optionally release VLC."""
+        self._showoff_generation += 1
+        for timer in self._showoff_timers:
+            timer.stop()
+            timer.deleteLater()
+        self._showoff_timers.clear()
+        if self._cf_timer is not None:
+            self._cf_timer.stop()
+            self._cf_timer.deleteLater()
+            self._cf_timer = None
+
+        for index, player in enumerate(self._players):
+            if player is None:
+                continue
+            try:
+                player.stop()
+            except Exception:
+                logger.exception("VLC failed to stop Track %d during cleanup", index + 1)
+            if release_resources:
                 try:
-                    self._players[i].stop()
+                    player.release()
                 except Exception:
-                    pass
-            self._playing[i] = False
+                    logger.exception("VLC failed to release Track %d", index + 1)
+                self._players[index] = None
+
+        if release_resources and self._vlc_instance is not None:
+            try:
+                self._vlc_instance.release()
+            except Exception:
+                logger.exception("VLC failed to release its shared instance")
+            self._vlc_instance = None
+
+        self._cf_plan = None
+        self._cf_player0 = None
+        self._cf_player1 = None
+        self._cf_step = 0
+        self._playing = [False, False]
         self.btn_play1.setText("\u25b6  Track 1")
         self.btn_play2.setText("\u25b6  Track 2")
         self.status_lbl.setText("Stopped")
@@ -1585,7 +1712,8 @@ class AudioPlayerBar(QWidget):
             try:
                 self._players[other_idx].pause()
             except Exception:
-                pass
+                self._report_vlc_error("pause", other_idx)
+                return
             self._playing[other_idx] = False
             other_btn = self.btn_play2 if other_idx == 1 else self.btn_play1
             other_btn.setText(f"\u25b6  Track {other_idx + 1}")
@@ -1595,7 +1723,8 @@ class AudioPlayerBar(QWidget):
             try:
                 player.pause()
             except Exception:
-                pass
+                self._report_vlc_error("pause", track_idx)
+                return
             self._playing[track_idx] = False
             btn = self.btn_play1 if track_idx == 0 else self.btn_play2
             btn.setText(f"\u25b6  Track {track_idx + 1}")
@@ -1609,10 +1738,9 @@ class AudioPlayerBar(QWidget):
                     media = player.get_media()
                     player.set_media(media)
             except Exception:
-                pass
-            try:
-                player.play()
-            except Exception:
+                self._report_vlc_error("prepare playback", track_idx)
+                return
+            if not self._play_player(track_idx, player):
                 return
             self._playing[track_idx] = True
             btn = self.btn_play1 if track_idx == 0 else self.btn_play2
@@ -1626,17 +1754,21 @@ class AudioPlayerBar(QWidget):
         for i in range(2):
             if self._playing[i] and self._players[i] is not None:
                 try:
+                    state = self._players[i].get_state()
+                    if state == _vlc.State.Error:
+                        logger.error("VLC entered an error state for Track %d", i + 1)
+                        self._set_playback_failed(i, "VLC entered an error state")
+                        continue
                     ratio = self._players[i].get_position()
                     if ratio is not None and 0.0 <= ratio <= 1.0:
                         self.position_changed.emit(i, ratio)
-                    state = self._players[i].get_state()
                     if state == _vlc.State.Ended:
                         self._playing[i] = False
                         btn = self.btn_play1 if i == 0 else self.btn_play2
                         btn.setText(f"\u25b6  Track {i + 1}")
                         self.status_lbl.setText("Playback ended")
                 except Exception:
-                    pass
+                    self._report_vlc_error("read playback status", i)
 
     def _seek(self, track_idx, delta_sec):
         """Seek track_idx by delta_sec seconds (positive = forward, negative = back)."""
@@ -1656,7 +1788,7 @@ class AudioPlayerBar(QWidget):
                 new_ms = min(new_ms, length_ms - 1000)
             player.set_time(new_ms)
         except Exception:
-            pass
+            self._report_vlc_error("seek", track_idx)
 
     def _on_showoff_clicked(self):
         """Called when user clicks Showoff! \u2014 invoke the registered callback."""
@@ -1682,37 +1814,37 @@ class AudioPlayerBar(QWidget):
             self.status_lbl.setText("\u26a0 Load both tracks first")
             return
 
-        self._cf_plan    = plan
-        self._cf_player0 = p0
-        self._cf_player1 = p1
-        self._cf_step    = 0
-        self._cf_steps   = 40
-        if getattr(self, '_cf_timer', None) is not None:
-            try:
-                self._cf_timer.stop()
-            except Exception:
-                pass
-            self._cf_timer = None
-
         try:
             # Phase 1 \u2014 Stop both cleanly and apply BPM rate
             self.stop_all()
+            generation = self._showoff_generation
+            self._cf_plan    = plan
+            self._cf_player0 = p0
+            self._cf_player1 = p1
+            self._cf_step    = 0
             p0.set_rate(float(plan['bpm1_rate']))
             p1.set_rate(float(plan['bpm2_rate']))
 
             # Phase 2 \u2014 Start Track 1 and seek to exit_ratio after buffer
             p0.audio_set_volume(100)
-            p0.play()
+            if not self._play_player(0, p0):
+                return
             self._playing[0] = True
             self.btn_play1.setText("\u23f8  Track 1")
             self.status_lbl.setText("\U0001f42b Showoff! \u2014 Track 1 loading\u2026")
-            QTimer.singleShot(QSettings("CamelHot", "DJAnalyzer").value("vlc_buffer_delay", 600, type=int), self._showoff_seek_track1)
+            self._schedule_showoff_callback(
+                QSettings("CamelHot", "DJAnalyzer").value("vlc_buffer_delay", 600, type=int),
+                generation,
+                self._showoff_seek_track1,
+            )
 
-        except Exception as e:
-            self.status_lbl.setText(f"Showoff error: {e}")
+        except Exception:
+            self._report_vlc_error("start Showoff")
 
-    def _showoff_seek_track1(self):
+    def _showoff_seek_track1(self, generation=None):
         """Phase 2b \u2014 Seek Track 1 to exit point after VLC buffer delay."""
+        if not self._is_current_showoff(generation):
+            return
         try:
             p0 = self._cf_player0
             exit_ratio = float(self._cf_plan['exit_ratio'])
@@ -1721,51 +1853,66 @@ class AudioPlayerBar(QWidget):
                 f"\U0001f42b Showoff! \u2014 Track 1 at exit point "
                 f"({exit_ratio:.0%}) \u2014 queuing Track 2\u2026"
             )
-        except Exception as e:
-            self.status_lbl.setText(f"Seek error: {e}")
+        except Exception:
+            self._report_vlc_error("seek Showoff Track 1", 0)
             return
         # Phase 3 \u2014 Start Track 2 at entry_ratio after another buffer delay
-        QTimer.singleShot(QSettings("CamelHot", "DJAnalyzer").value("vlc_track_delay", 400, type=int), self._showoff_start_track2)
+        self._schedule_showoff_callback(
+            QSettings("CamelHot", "DJAnalyzer").value("vlc_track_delay", 400, type=int),
+            generation,
+            self._showoff_start_track2,
+        )
 
-    def _showoff_start_track2(self):
+    def _showoff_start_track2(self, generation=None):
         """Phase 3 \u2014 Start Track 2 at entry_ratio with volume 0, begin crossfade."""
+        if not self._is_current_showoff(generation):
+            return
         try:
             p1 = self._cf_player1
             entry_ratio = float(self._cf_plan['entry_ratio'])
             p1.audio_set_volume(0)
-            p1.play()
+            if not self._play_player(1, p1):
+                return
             self._playing[1] = True
             self.btn_play2.setText("\u23f8  Track 2")
             self.status_lbl.setText("\U0001f42b Showoff! \u2014 Track 2 loading\u2026")
-            QTimer.singleShot(QSettings("CamelHot", "DJAnalyzer").value("vlc_buffer_delay", 600, type=int), self._showoff_seek_track2)
+            self._schedule_showoff_callback(
+                QSettings("CamelHot", "DJAnalyzer").value("vlc_buffer_delay", 600, type=int),
+                generation,
+                self._showoff_seek_track2,
+            )
         except Exception as e:
             self.status_lbl.setText(f"Track 2 start error: {e}")
 
-    def _showoff_seek_track2(self):
+    def _showoff_seek_track2(self, generation=None):
         """Phase 3b \u2014 Seek Track 2 to entry point, then start crossfade timer."""
+        if not self._is_current_showoff(generation):
+            return
         try:
             p1 = self._cf_player1
             entry_ratio = float(self._cf_plan['entry_ratio'])
             p1.set_position(entry_ratio)
             self.status_lbl.setText("\U0001f42b Showoff! \u2014 Crossfading\u2026")
-        except Exception as e:
-            self.status_lbl.setText(f"Seek error: {e}")
+        except Exception:
+            self._report_vlc_error("seek Showoff Track 2", 1)
             return
         # Phase 4 \u2014 Start crossfade timer
         crossfade_ms = max(1000, self._cf_plan['crossfade_sec'] * 1000)
         interval_ms  = max(50, crossfade_ms // self._cf_steps)
         self._cf_timer = QTimer(self)
         self._cf_timer.setInterval(interval_ms)
-        self._cf_timer.timeout.connect(self._crossfade_step)
+        self._cf_timer.timeout.connect(lambda: self._crossfade_step(generation))
         self._cf_timer.start()
 
-    def _crossfade_step(self):
+    def _crossfade_step(self, generation=None):
         """
         Advance one crossfade volume step.
         Track 1: 100 \u2192 0
         Track 2: 0   \u2192 100
         When complete: stop Track 1, Track 2 continues.
         """
+        if not self._is_current_showoff(generation):
+            return
         self._cf_step += 1
         import math
         ratio = self._cf_step / self._cf_steps
@@ -1777,7 +1924,8 @@ class AudioPlayerBar(QWidget):
             self._cf_player0.audio_set_volume(vol0)
             self._cf_player1.audio_set_volume(vol1)
         except Exception:
-            pass
+            self._report_vlc_error("adjust crossfade volume")
+            return
         if self._cf_step >= self._cf_steps:
             # Crossfade complete
             self._cf_timer.stop()
@@ -1786,7 +1934,8 @@ class AudioPlayerBar(QWidget):
                 self._cf_player0.stop()
                 self._cf_player0.audio_set_volume(100)  # restore for next use
             except Exception:
-                pass
+                self._report_vlc_error("finish crossfade", 0)
+                return
             self._playing[0] = False
             self.btn_play1.setText("\u25b6  Track 1")
             self.status_lbl.setText(
@@ -3547,9 +3696,9 @@ class DJAnalyzerGUI(QMainWindow):
         # Stop audio player before closing
         if hasattr(self, 'audio_player_bar'):
             try:
-                self.audio_player_bar.stop_all()
+                self.audio_player_bar.shutdown()
             except Exception:
-                pass
+                logger.exception("Failed to shut down compatibility audio player")
         workers = [
             getattr(self, 'analysis_worker', None),
             getattr(self, 'organization_worker', None),
@@ -3786,7 +3935,7 @@ class DJAnalyzerGUI(QMainWindow):
 
     def _save_ui_state(self):
         if hasattr(self, 'audio_player_bar'):
-            self.audio_player_bar.stop_all()
+            self.audio_player_bar.shutdown()
         if hasattr(self, 'tabs'):
             self._saved_tab_index = self.tabs.currentIndex()
         self._saved_file             = self.selected_file
