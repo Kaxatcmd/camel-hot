@@ -17,7 +17,7 @@
 
 ### 📖 For the Practical DJ (30 minutes)
 1. Read: [QUICK_START_ENGINE.md](QUICK_START_ENGINE.md)
-2. Read: [DJ_MIXING_GUIDE.md](DJ_MIXING_GUIDE.md)
+2. Read: [DJ_MIXING_GUIDE.md](../guides/DJ_MIXING_GUIDE.md)
 3. Analyze tracks in GUI or Python
 
 ### 🎓 For the Developer (60+ minutes)
@@ -126,7 +126,7 @@ Updated existing `analyze_track()` function
 
 **When to read**: When implementing features
 
-#### [DJ_MIXING_GUIDE.md](DJ_MIXING_GUIDE.md) (500+ lines)
+#### [DJ_MIXING_GUIDE.md](../guides/DJ_MIXING_GUIDE.md) (500+ lines)
 **For**: Practical DJ mixing techniques  
 **Time**: 20 minutes  
 **Contains**:
@@ -459,7 +459,7 @@ See [QUICK_START_ENGINE.md](QUICK_START_ENGINE.md) "Quick Start" section
 See [TRANSITION_ENGINE_GUIDE.md](TRANSITION_ENGINE_GUIDE.md) API reference
 
 **...mix two incompatible tracks?**  
-See [DJ_MIXING_GUIDE.md](DJ_MIXING_GUIDE.md) "Difficult Transitions" section
+See [DJ_MIXING_GUIDE.md](../guides/DJ_MIXING_GUIDE.md) "Difficult Transitions" section
 
 **...understand the score?**  
 See [QUICK_START_ENGINE.md](QUICK_START_ENGINE.md) "Reading the Score" section
@@ -480,7 +480,7 @@ See [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) "Integration" section
 | What can it do? | [FEATURE_CHECKLIST.md](FEATURE_CHECKLIST.md) |
 | How does it work? | [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) |
 | How do I use it? | [TRANSITION_ENGINE_GUIDE.md](TRANSITION_ENGINE_GUIDE.md) |
-| How do I mix tracks? | [DJ_MIXING_GUIDE.md](DJ_MIXING_GUIDE.md) |
+| How do I mix tracks? | [DJ_MIXING_GUIDE.md](../guides/DJ_MIXING_GUIDE.md) |
 | Can I see code? | [test_transition_engine.py](test_transition_engine.py) |
 | Is it working? | [FEATURE_CHECKLIST.md](FEATURE_CHECKLIST.md) |
 

@@ -311,5 +311,5 @@ You now have a complete offline DJ analysis tool. The transition scoring engine 
 For detailed information, see:
 - Technical details: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)
 - Full API docs: [TRANSITION_ENGINE_GUIDE.md](TRANSITION_ENGINE_GUIDE.md)
-- Mixing techniques: [DJ_MIXING_GUIDE.md](DJ_MIXING_GUIDE.md)
-- Code examples: [test_transition_engine.py](test_transition_engine.py)
+- Mixing techniques: [DJ_MIXING_GUIDE.md](../guides/DJ_MIXING_GUIDE.md)
+- Code examples: [test_transition_engine.py](../../test_transition_engine.py)

@@ -32,7 +32,7 @@ Be respectful and constructive. Contributions of all skill levels are welcome.
 ### 1. Fork and clone
 
 ```bash
-git clone https://github.com/your-username/camel-hot.git
+git clone https://github.com/Kaxatcmd/camel-hot.git
 cd camel-hot
 ```
 
@@ -92,7 +92,16 @@ camel-hot/
 │       ├── test_transition_scoring.py
 │       └── test_config.py
 │
-├── docs/                    # Architecture, configuration, Camelot reference
+├── docs/
+│   ├── ARCHITECTURE.md      # Architecture, configuration, Camelot reference
+│   ├── CAMELOT_SYSTEM.md
+│   ├── CONFIGURATION.md
+│   ├── CONTRIBUTING.md
+│   ├── guides/
+│   │   └── DJ_MIXING_GUIDE.md
+│   └── history/
+│       ├── README.md
+│       └── historical guides and notes
 ├── assets/                  # Images used by the GUI
 └── .github/
     ├── workflows/ci.yml     # GitHub Actions (pytest + flake8)
