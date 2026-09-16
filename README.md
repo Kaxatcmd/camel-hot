@@ -1,4 +1,8 @@
 # 🐪 Camel-Hot — DJ Harmonic Analyzer
+<img width="512" height="512" alt="camel_hot_512" src="https://github.com/user-attachments/assets/2d2642b1-f1c7-4970-825c-7fe86f10c6db" />
+
+
+
 
 > Analyze audio files, detect musical keys and BPM, organize your library by Camelot notation, and generate harmonic mixing playlists — all from a clean PyQt5 desktop GUI.
 
@@ -29,8 +33,9 @@
 ---
 
 ## Screenshots
+<img width="1920" height="1200" alt="screenshot2" src="https://github.com/user-attachments/assets/fea922e7-5d6e-4be8-af0a-4f6b71f06def" />
 
-![CAMEL-HOT Compatibility Tab](assets/screenshot.png)
+
 
 ---
 
@@ -283,4 +288,7 @@ Open a [bug report](.github/ISSUE_TEMPLATE/bug_report.yml) or [feature request](
 ## License
 
 [MIT](LICENSE) © 2026 Camel-Hot contributors
+
+<img width="768" height="768" alt="mtw2np7gkmzvv5" src="https://github.com/user-attachments/assets/fe049760-1869-4f93-b21c-01df40c62272" />
+
 
